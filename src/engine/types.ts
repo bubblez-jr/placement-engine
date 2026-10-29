@@ -48,14 +48,7 @@ export interface Destination {
 
 export type AccessNeed = 'step_free' | 'wheelchair_accessible' | 'ground_floor_or_lift' | 'adapted_bathroom'
 
-export type PriorityFlag =
-  | 'child_protection_plan'
-  | 'exam_year'
-  | 'ongoing_treatment'
-  | 'employment'
-  | 'caring_duties'
-  | 'domestic_abuse'
-  | 'disability'
+export type PriorityFlag = 'child_protection_plan' | 'exam_year' | 'ongoing_treatment' | 'employment' | 'caring_duties' | 'domestic_abuse' | 'disability'
 
 export interface SafeguardingZone {
   id: string
@@ -86,14 +79,7 @@ export interface Household {
 
 export type UnitType = 'self_contained_nightly' | 'psl' | 'council_hostel' | 'annex_shared' | 'bnb'
 
-export type ComplianceType =
-  | 'gas_safety'
-  | 'eicr'
-  | 'epc'
-  | 'smoke_co_alarms'
-  | 'fire_risk'
-  | 'hmo_licence'
-  | 'inspection'
+export type ComplianceType = 'gas_safety' | 'eicr' | 'epc' | 'smoke_co_alarms' | 'fire_risk' | 'hmo_licence' | 'inspection'
 
 export interface ComplianceItem {
   type: ComplianceType

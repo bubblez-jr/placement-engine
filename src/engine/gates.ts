@@ -77,14 +77,7 @@ export function sharedFacilities(p: Property): boolean {
  * Run every hard gate for one property. Returns all checks (passes included)
  * so the audit pack can show what was tested, not only what failed.
  */
-export function runGates(
-  h: Household,
-  p: Property,
-  supplier: Supplier | undefined,
-  rs: Ruleset,
-  bedroomsNeeded: number,
-  now: IsoDateTime,
-): GateCheck[] {
+export function runGates(h: Household, p: Property, supplier: Supplier | undefined, rs: Ruleset, bedroomsNeeded: number, now: IsoDateTime): GateCheck[] {
   const checks: GateCheck[] = []
   const decisionDate = h.needFrom
   const stayEnd = addDays(h.needFrom, h.expectedNights)
@@ -94,7 +87,9 @@ export function runGates(
     block(
       'SUPPLIER_NOT_APPROVED',
       !!supplier?.approved,
-      supplier?.approved ? `Supplier ${supplier.name} is on the approved list` : `Supplier ${supplier?.name ?? 'unknown'} is not on the council's approved list`,
+      supplier?.approved
+        ? `Supplier ${supplier.name} is on the approved list`
+        : `Supplier ${supplier?.name ?? 'unknown'} is not on the council's approved list`,
       LAW.procurement,
     ),
   )
@@ -160,17 +155,10 @@ export function runGates(
       ),
     )
   }
-  checks.push(
-    block(
-      'OVER_CAPACITY',
-      p.maxOccupants >= h.members.length,
-      `Sleeps ${p.maxOccupants}; household of ${h.members.length}`,
-      LAW.space,
-    ),
-  )
+  checks.push(block('OVER_CAPACITY', p.maxOccupants >= h.members.length, `Sleeps ${p.maxOccupants}; household of ${h.members.length}`, LAW.space))
 
   // Access must-haves
-  const access: [typeof h.accessNeeds[number], GateCheck['code'], boolean, string][] = [
+  const access: [(typeof h.accessNeeds)[number], GateCheck['code'], boolean, string][] = [
     ['step_free', 'ACCESS_STEP_FREE', p.stepFree, 'Step-free access'],
     ['wheelchair_accessible', 'ACCESS_WHEELCHAIR', p.wheelchairAccessible, 'Wheelchair accessible'],
     ['ground_floor_or_lift', 'ACCESS_GROUND_OR_LIFT', p.floor === 0 || p.lift, 'Ground floor or lift'],

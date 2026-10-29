@@ -31,7 +31,9 @@ export function statutoryClocks(h: Household, p: Property, rs: Ruleset, d: Decis
   if (h.members.some(m => m.role === 'child')) {
     clocks.push({
       key: 's213aa',
-      label: d.consentToNotifyServices ? "Notify the children's school(s), GP and health visitor" : 'Ask again for consent to notify school, GP and health visitor',
+      label: d.consentToNotifyServices
+        ? "Notify the children's school(s), GP and health visitor"
+        : 'Ask again for consent to notify school, GP and health visitor',
       due: addDays(start, 14),
       basis: 'Housing Act 1996 s213AA (Children’s Wellbeing and Schools Act 2026), in force 1 Sep 2026: notify within 14 days, with consent',
       status: 'open',

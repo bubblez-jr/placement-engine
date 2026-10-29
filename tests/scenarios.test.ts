@@ -75,6 +75,10 @@ describe('scenario: pregnant, out of hours', async () => {
   it('warns about the six-week limit in the explanation', () => {
     expect(r.explanation.caveats.join(' ')).toMatch(/6-week clock/)
   })
+  it('does not claim the last-resort option passes every check', () => {
+    expect(r.explanation.reasons[0]).toMatch(/last resort/)
+    expect(r.explanation.reasons[0]).not.toMatch(/passes every compliance and suitability check/)
+  })
   it('records the Ombudsman remedy risk when the plan runs past six weeks', () => {
     const rec = byId(r, r.recommendedId!)
     expect(rec.cost.risks.join(' ')).toMatch(/Ombudsman/)

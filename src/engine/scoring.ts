@@ -142,12 +142,17 @@ export function scoreCandidate(
       contribution: round(weight * v.value, 2),
     }
   })
-  const score = round(criteria.reduce((a, c) => a + c.contribution, 0), 1)
+  const score = round(
+    criteria.reduce((a, c) => a + c.contribution, 0),
+    1,
+  )
   return { criteria, score }
 }
 
 /** Re-score from stored values with different weights (for the sensitivity check). */
 export function rescore(criteria: CriterionScore[], weights: Record<CriterionKey, number>): number {
-  return round(criteria.reduce((a, c) => a + (c.applicable ? weights[c.key] * c.value : 0), 0), 1)
+  return round(
+    criteria.reduce((a, c) => a + (c.applicable ? weights[c.key] * c.value : 0), 0),
+    1,
+  )
 }
-

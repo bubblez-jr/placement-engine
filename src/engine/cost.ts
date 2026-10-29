@@ -21,7 +21,8 @@ export function subsidyPerNight(p: Property, rs: Ruleset): { perNight: number; b
   const weeklyCharge = p.nightlyCharge * 7
   const byRate = rs.subsidy.rate * lha
   const weekly = Math.min(weeklyCharge, byRate, cap)
-  const limiter = weekly === weeklyCharge ? 'the charge' : weekly === cap ? `the £${cap}/week cap` : `${Math.round(rs.subsidy.rate * 100)}% of the Jan 2011 LHA rate`
+  const limiter =
+    weekly === weeklyCharge ? 'the charge' : weekly === cap ? `the £${cap}/week cap` : `${Math.round(rs.subsidy.rate * 100)}% of the Jan 2011 LHA rate`
   return {
     perNight: money(weekly / 7),
     basis: `${p.brma}, ${size}-bed rate${sharedFacilities(p) ? ' (shared facilities: one-bed rate)' : ''}: £${lha.toFixed(2)}/week × ${Math.round(
@@ -41,8 +42,24 @@ export function costPlacement(h: Household, p: Property, rs: Ruleset, journeys: 
   const sub = subsidyPerNight(p, rs)
   const taNet = money(p.nightlyCharge - sub.perNight)
   const lines: CostLine[] = [
-    { key: 'charge', label: 'Nightly charge', budgetHolder: 'ta_budget', perUnit: p.nightlyCharge, unit: 'night', stayTotal: money(p.nightlyCharge * stayNights), basis: 'Supplier rate on file' },
-    { key: 'subsidy', label: 'Housing benefit subsidy recovered', budgetHolder: 'ta_budget', perUnit: -sub.perNight, unit: 'night', stayTotal: money(-sub.perNight * stayNights), basis: sub.basis },
+    {
+      key: 'charge',
+      label: 'Nightly charge',
+      budgetHolder: 'ta_budget',
+      perUnit: p.nightlyCharge,
+      unit: 'night',
+      stayTotal: money(p.nightlyCharge * stayNights),
+      basis: 'Supplier rate on file',
+    },
+    {
+      key: 'subsidy',
+      label: 'Housing benefit subsidy recovered',
+      budgetHolder: 'ta_budget',
+      perUnit: -sub.perNight,
+      unit: 'night',
+      stayTotal: money(-sub.perNight * stayNights),
+      basis: sub.basis,
+    },
   ]
 
   const st = rs.schoolTransport
@@ -73,7 +90,10 @@ export function costPlacement(h: Household, p: Property, rs: Ruleset, journeys: 
         perUnit: st.busFarePerChildDay,
         unit: 'school day',
         stayTotal: money(st.busFarePerChildDay * schoolDaysInStay),
-        basis: st.funding === 'family' ? 'Council policy: the family pays travel to an existing school' : `Journey under ${st.fundIfMinutesOver} min: the family pays`,
+        basis:
+          st.funding === 'family'
+            ? 'Council policy: the family pays travel to an existing school'
+            : `Journey under ${st.fundIfMinutesOver} min: the family pays`,
       })
     }
   }

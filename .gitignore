@@ -7,3 +7,4 @@ dist-demo
 !.env.example
 screenshots/
 .DS_Store
+*.tsbuildinfo

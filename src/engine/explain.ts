@@ -78,8 +78,14 @@ export function costComparison(a: Candidate, b: Candidate): string[] {
   const eduPerDay = (c: Candidate) => c.cost.lines.filter(l => l.budgetHolder === 'education').reduce((s, l) => s + l.perUnit, 0)
   const ea = eduPerDay(a)
   const eb = eduPerDay(b)
-  if (eb > ea + 0.5) out.push(`${b.label} would add about ${gbp(eb - ea)} a school day to the education transport budget (${gbp(b.cost.educationStay - a.cost.educationStay)} over the stay).`)
-  if (ea > eb + 0.5) out.push(`${a.label} adds about ${gbp(ea - eb)} a school day to the education transport budget (${gbp(a.cost.educationStay - b.cost.educationStay)} over the stay).`)
+  if (eb > ea + 0.5)
+    out.push(
+      `${b.label} would add about ${gbp(eb - ea)} a school day to the education transport budget (${gbp(b.cost.educationStay - a.cost.educationStay)} over the stay).`,
+    )
+  if (ea > eb + 0.5)
+    out.push(
+      `${a.label} adds about ${gbp(ea - eb)} a school day to the education transport budget (${gbp(a.cost.educationStay - b.cost.educationStay)} over the stay).`,
+    )
   const hh = b.cost.householdStay - a.cost.householdStay
   if (hh > 20) out.push(`${b.label} would cost the family about ${gbp(hh)} more over the stay in travel and charges.`)
   if (hh < -20) out.push(`${a.label} costs the family about ${gbp(-hh)} more over the stay in travel and charges.`)
@@ -135,8 +141,11 @@ export function buildExplanation(r: SearchResult, rs: Ruleset): Explanation {
   const reasons: string[] = []
   const caveats: string[] = []
   const prop = rec.checks.find(c => c.code === 'NOT_AVAILABLE')
+  const avail = prop ? ` and is ${prop.message.charAt(0).toLowerCase()}${prop.message.slice(1)}` : ''
   reasons.push(
-    `It passes every compliance and suitability check${prop ? ` and is ${prop.message.charAt(0).toLowerCase()}${prop.message.slice(1)}` : ''}. ${rejected} of ${r.candidates.length} properties were ruled out by the checks.`,
+    rec.lastResort
+      ? `No self-contained property passes the checks, so shared accommodation is considered as a last resort. It passes every other check${avail}. ${rejected} of ${r.candidates.length} properties were ruled out.`
+      : `It passes every compliance and suitability check${avail}. ${rejected} of ${r.candidates.length} properties were ruled out by the checks.`,
   )
 
   const top = r.candidates.find(c => c.propertyId === r.topScoreId)!
@@ -159,12 +168,15 @@ export function buildExplanation(r: SearchResult, rs: Ruleset): Explanation {
     cost = costComparison(rec, runnerUp)
   }
 
-  for (const w of rec.warnings) caveats.push(w.message)
-  if (rec.lastResort) caveats.push(`Shared facilities for a family: start the ${rs.bnbFamilyLimitWeeks}-week clock and keep searching for self-contained accommodation.`)
+  for (const w of rec.warnings) if (w.code !== 'SHARED_FACILITIES_FAMILY') caveats.push(w.message)
+  if (rec.lastResort)
+    caveats.push(`Shared facilities for a family: start the ${rs.bnbFamilyLimitWeeks}-week clock and keep searching for self-contained accommodation.`)
   if (rec.district !== rs.homeDistrict) caveats.push(`Outside the borough (${rec.district}): notify ${rec.district} within 14 days (Housing Act 1996 s208).`)
   for (const risk of rec.cost.risks) caveats.push(risk)
   if (r.sensitivity.status === 'close_call') {
-    caveats.push(`Close call: the recommendation changes if some weights move by 20% (${r.sensitivity.flips.length} of the tested changes). Check the next option carefully.`)
+    caveats.push(
+      `Close call: the recommendation changes if some weights move by 20% (${r.sensitivity.flips.length} of the tested changes). Check the next option carefully.`,
+    )
   }
   return { headline: `${rec.label} is recommended.`, reasons, cost, caveats }
 }
@@ -181,4 +193,3 @@ export function whyHere(c: Candidate, rec: Candidate | undefined): string {
   if (ahead.length) parts.push(`better on ${joinAnd(ahead.map(x => x.split(' (')[0]))}`)
   return `${parts.join('; ')}.`
 }
-

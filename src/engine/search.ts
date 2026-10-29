@@ -22,7 +22,11 @@ function newId(): string {
 }
 
 /** Pick the recommendation: highest suitability; within the tie-break band, lowest public cost. */
-export function pickRecommendation(eligible: Candidate[], scoreOf: (c: Candidate) => number, band: number): { rec: Candidate | null; top: Candidate | null; tieBreak: boolean } {
+export function pickRecommendation(
+  eligible: Candidate[],
+  scoreOf: (c: Candidate) => number,
+  band: number,
+): { rec: Candidate | null; top: Candidate | null; tieBreak: boolean } {
   if (eligible.length === 0) return { rec: null, top: null, tieBreak: false }
   const sorted = [...eligible].sort((a, b) => scoreOf(b) - scoreOf(a) || a.cost.publicPerNight - b.cost.publicPerNight || a.label.localeCompare(b.label))
   const top = sorted[0]
@@ -92,7 +96,11 @@ export async function runSearch(input: SearchInput): Promise<SearchResult> {
         c.eligible = true
         c.lastResort = true
         c.blocks = []
-        c.checks = c.checks.map(k => (k.code === 'SHARED_FACILITIES_FAMILY' ? { ...k, severity: 'warn' as const, message: `Last resort: no self-contained option passes. ${k.message}` } : k))
+        c.checks = c.checks.map(k =>
+          k.code === 'SHARED_FACILITIES_FAMILY'
+            ? { ...k, severity: 'warn' as const, message: `Last resort: no self-contained option passes. ${k.message}` }
+            : k,
+        )
         c.warnings = c.checks.filter(k => k.severity === 'warn')
         c.cost = costPlacement(h, p, rs, c.journeys, true)
       }
@@ -108,7 +116,8 @@ export async function runSearch(input: SearchInput): Promise<SearchResult> {
   ranked.forEach((c, i) => (c.rank = i + 1))
   for (const c of eligible) {
     c.pareto = !eligible.some(
-      o => o !== c && o.score >= c.score && o.cost.publicPerNight <= c.cost.publicPerNight && (o.score > c.score || o.cost.publicPerNight < c.cost.publicPerNight),
+      o =>
+        o !== c && o.score >= c.score && o.cost.publicPerNight <= c.cost.publicPerNight && (o.score > c.score || o.cost.publicPerNight < c.cost.publicPerNight),
     )
   }
 
@@ -138,7 +147,12 @@ export async function runSearch(input: SearchInput): Promise<SearchResult> {
     rulesetId: rs.id,
     rulesetVersion: rs.version,
     rulesetHash: rs.hash,
-    travelProvider: { id: travel.id, label: travel.label, disclaimer: travel.disclaimer, assumptions: `Public transport, arrive by ${h.destinations[0]?.arriveBy ?? '09:00'} on a term-time weekday` },
+    travelProvider: {
+      id: travel.id,
+      label: travel.label,
+      disclaimer: travel.disclaimer,
+      assumptions: `Public transport, arrive by ${h.destinations[0]?.arriveBy ?? '09:00'} on a term-time weekday`,
+    },
     bedroomNeed: need,
     effectiveWeights: weights,
     candidates,

@@ -11,7 +11,7 @@ export interface DecisionSnapshot {
   councilName: string
   search: SearchResult
   ruleset: Ruleset
-  /** The properties as they stood at search time */
+  /** The properties as held when the decision was recorded */
   properties: Property[]
   decision: Decision
   clocks: StatutoryClock[]

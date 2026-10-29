@@ -44,3 +44,15 @@ export const PLACE_KIND_LABEL: Record<DestinationKind, string> = {
 export function placeById(id: string): Place | undefined {
   return PLACES.find(p => p.id === id)
 }
+
+/** Area presets for the home area and safeguarding zones (synthetic demo). */
+export const AREAS: { id: string; label: string; location: LatLng }[] = [
+  { id: 'forest-gate', label: 'Forest Gate, Demo Borough', location: { lat: 51.548, lng: 0.026 } },
+  { id: 'plaistow', label: 'Plaistow, Demo Borough', location: { lat: 51.527, lng: 0.02 } },
+  { id: 'manor-park', label: 'Manor Park, Demo Borough', location: { lat: 51.551, lng: 0.04 } },
+  { id: 'stratford', label: 'Stratford, Demo Borough', location: { lat: 51.542, lng: 0.0 } },
+  { id: 'leyton', label: 'Leyton (Waltham Forest)', location: { lat: 51.565, lng: -0.01 } },
+  { id: 'ilford', label: 'Ilford (Redbridge)', location: { lat: 51.559, lng: 0.07 } },
+  { id: 'barking', label: 'Barking (Barking and Dagenham)', location: { lat: 51.539, lng: 0.081 } },
+  { id: 'walthamstow', label: 'Walthamstow (Waltham Forest)', location: { lat: 51.585, lng: -0.02 } },
+]

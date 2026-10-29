@@ -12,7 +12,7 @@ import type { TravelCell, TravelProvider, TravelQuery } from './provider'
  */
 export function estimatePublicTransportMinutes(km: number): number {
   const road = km * 1.3
-  const walk = (km * 1.25) / 4.8 * 60
+  const walk = ((km * 1.25) / 4.8) * 60
   const speed = km < 3 ? 14 : km < 12 ? 20 : km < 30 ? 28 : 45
   const change = km > 8 ? 6 : 0
   const pt = 8 + 5 + (road / speed) * 60 + change
@@ -36,7 +36,7 @@ export const estimateProvider: TravelProvider = {
       for (const d of q.destinations) {
         const km = haversineKm(o.location, d.location)
         const minutes =
-          q.mode === 'drive' ? estimateDriveMinutes(km) : q.mode === 'walk' ? Math.round((km * 1.25) / 4.8 * 60) : estimatePublicTransportMinutes(km)
+          q.mode === 'drive' ? estimateDriveMinutes(km) : q.mode === 'walk' ? Math.round(((km * 1.25) / 4.8) * 60) : estimatePublicTransportMinutes(km)
         out.push({ originId: o.id, destinationId: d.id, minutes, distanceKm: Math.round(km * 10) / 10 })
       }
     }
