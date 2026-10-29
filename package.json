@@ -1,0 +1,32 @@
+{
+  "name": "placement-engine",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Decision engine for council temporary accommodation placements: ranks options per household by compliance, suitability, journeys and net cost; the officer decides; the evidence is frozen as an audit pack.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "build:demo": "vite build --mode demo",
+    "preview": "vite preview",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@react-pdf/renderer": "4.9.0",
+    "react": "19.2.9",
+    "react-dom": "19.2.9"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.1.18",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
+    "@vitejs/plugin-react": "5.2.0",
+    "tailwindcss": "4.1.18",
+    "typescript": "5.9.3",
+    "vite": "7.3.7",
+    "vite-plugin-singlefile": "2.3.4",
+    "vitest": "3.2.7"
+  }
+}

@@ -1,0 +1,145 @@
+import { addDays } from '../engine/dates'
+import type { ComplianceItem, Property, Supplier, UnitType } from '../engine/types'
+
+// SYNTHETIC inventory for the demo: invented addresses at plausible locations
+// in and around east London. Dates are relative to "today" so the demo always
+// looks current.
+
+export const SUPPLIERS: Supplier[] = [
+  { id: 'SUP-NL', name: 'Northside Lettings (synthetic)', approved: true },
+  { id: 'SUP-RH', name: 'Riverside Homes (synthetic)', approved: true },
+  { id: 'SUP-AH', name: 'Atlas Hospitality (synthetic)', approved: true },
+  { id: 'SUP-QS', name: 'Quickstay Nightly (synthetic)', approved: false },
+  { id: 'SUP-CW', name: 'Countywide Housing Partners (synthetic)', approved: true },
+  { id: 'SUP-PSL', name: 'Demo Borough leasing scheme', approved: true },
+]
+
+interface Spec {
+  id: string
+  label: string
+  street: string
+  postcode: string
+  lat: number
+  lng: number
+  district: string
+  brma: string
+  inLondon?: boolean
+  supplierId?: string
+  unitType?: UnitType
+  bedrooms: number
+  maxOccupants?: number
+  floor?: number
+  lift?: boolean
+  stepFree?: boolean
+  wheelchair?: boolean
+  adaptedBathroom?: boolean
+  petsAllowed?: boolean
+  hasGas?: boolean
+  isHmo?: boolean
+  grade?: 'A' | 'B' | 'C'
+  reservedForAccessNeeds?: boolean
+  nightly: number
+  householdWeekly?: number
+  /** days from today */
+  availableFrom?: number
+  availableUntil?: number
+  confirmedDaysAgo?: number
+  /** compliance overrides */
+  gasExpiredDaysAgo?: number
+  epcBand?: string
+  noInspection?: boolean
+  eicrExpiresInDays?: number
+}
+
+const SPECS: Spec[] = [
+  // Demo Borough (home district)
+  { id: 'P01', label: 'Cedar Court 4', street: 'Flat 4, Cedar Court, Wellesley Road', postcode: 'E7 0XA', lat: 51.547, lng: 0.023, district: 'Demo Borough', brma: 'Inner East London', bedrooms: 3, maxOccupants: 6, floor: 2, lift: true, grade: 'A', nightly: 126 },
+  { id: 'P02', label: 'Thornbury House 12', street: '12 Thornbury House, Alder Street', postcode: 'E7 0XB', lat: 51.538, lng: 0.045, district: 'Demo Borough', brma: 'Inner East London', supplierId: 'SUP-PSL', unitType: 'psl', bedrooms: 3, maxOccupants: 6, grade: 'B', nightly: 88, availableFrom: 5 },
+  { id: 'P03', label: 'Station Parade 7', street: '7 Station Parade, Hampton Road', postcode: 'E7 0XD', lat: 51.552, lng: 0.039, district: 'Demo Borough', brma: 'Inner East London', bedrooms: 2, maxOccupants: 4, floor: 1, grade: 'B', nightly: 105, availableFrom: 1 },
+  { id: 'P04', label: 'Atlas Lodge, room 3', street: 'Atlas Lodge (B&B), Romney Road', postcode: 'E15 0XE', lat: 51.544, lng: 0.012, district: 'Demo Borough', brma: 'Inner East London', supplierId: 'SUP-AH', unitType: 'bnb', bedrooms: 2, maxOccupants: 5, isHmo: true, grade: 'C', nightly: 85, householdWeekly: 0 },
+  { id: 'P05', label: 'Larkspur Mews 3', street: '3 Larkspur Mews, Chestnut Avenue', postcode: 'E7 0XF', lat: 51.541, lng: 0.032, district: 'Demo Borough', brma: 'Inner East London', bedrooms: 4, maxOccupants: 8, grade: 'B', nightly: 168, gasExpiredDaysAgo: 10 },
+  { id: 'P06', label: 'Oakfield Annex, room B', street: 'Oakfield Annex, Upton Lane', postcode: 'E7 0XG', lat: 51.55, lng: 0.015, district: 'Demo Borough', brma: 'Inner East London', supplierId: 'SUP-RH', unitType: 'annex_shared', bedrooms: 1, maxOccupants: 2, isHmo: true, grade: 'B', nightly: 62, householdWeekly: 12 },
+  { id: 'P07', label: 'Hartley Court 1', street: 'Flat 1, Hartley Court, Selsdon Road', postcode: 'E13 0XH', lat: 51.536, lng: 0.028, district: 'Demo Borough', brma: 'Inner East London', bedrooms: 2, maxOccupants: 4, floor: 0, stepFree: true, wheelchair: true, adaptedBathroom: true, petsAllowed: true, grade: 'A', reservedForAccessNeeds: true, nightly: 118 },
+  // Neighbouring boroughs
+  { id: 'P08', label: 'Ilford Gardens 9', street: '9 Clements Gardens', postcode: 'IG1 0XJ', lat: 51.561, lng: 0.075, district: 'Redbridge', brma: 'Outer North East London', bedrooms: 3, maxOccupants: 6, grade: 'B', nightly: 112 },
+  { id: 'P09', label: 'Becontree Heath 22', street: '22 Heathway Close', postcode: 'RM8 0XK', lat: 51.545, lng: 0.145, district: 'Barking and Dagenham', brma: 'Outer East London', supplierId: 'SUP-RH', bedrooms: 3, maxOccupants: 6, grade: 'B', nightly: 92 },
+  { id: 'P10', label: 'Walthamstow Lofts 5', street: 'Loft 5, Hoe Street Works', postcode: 'E17 0XL', lat: 51.585, lng: -0.02, district: 'Waltham Forest', brma: 'Outer North East London', bedrooms: 3, maxOccupants: 6, floor: 3, lift: true, grade: 'A', nightly: 120, confirmedDaysAgo: 5 },
+  { id: 'P11', label: 'Bow Quarter 31', street: 'Apartment 31, Fairfield Road', postcode: 'E3 0XM', lat: 51.529, lng: -0.025, district: 'Tower Hamlets', brma: 'Inner East London', bedrooms: 2, maxOccupants: 4, floor: 4, lift: true, stepFree: true, grade: 'A', nightly: 134, availableFrom: 2 },
+  { id: 'P12', label: 'Leyton Fields 2', street: '2 Marsh Lane Terrace', postcode: 'E10 0XN', lat: 51.564, lng: -0.008, district: 'Waltham Forest', brma: 'Outer North East London', bedrooms: 4, maxOccupants: 8, grade: 'B', petsAllowed: true, nightly: 155 },
+  { id: 'P13', label: 'Hackney Downs 14', street: '14 Downs Park Road', postcode: 'E5 0XP', lat: 51.552, lng: -0.06, district: 'Hackney', brma: 'Inner East London', supplierId: 'SUP-QS', bedrooms: 3, maxOccupants: 6, grade: 'B', nightly: 139 },
+  { id: 'P14', label: 'Ilford Lane studio 3', street: 'Studio 3, 210 Ilford Lane', postcode: 'IG1 0XQ', lat: 51.555, lng: 0.07, district: 'Redbridge', brma: 'Outer North East London', bedrooms: 1, maxOccupants: 2, floor: 1, grade: 'B', nightly: 78, availableFrom: 1 },
+  { id: 'P15', label: 'Seven Kings 8', street: '8 Meads Lane', postcode: 'IG3 0XR', lat: 51.564, lng: 0.097, district: 'Redbridge', brma: 'Outer North East London', bedrooms: 4, maxOccupants: 7, grade: 'C', nightly: 150, availableUntil: 60 },
+  { id: 'P26', label: 'Dagenham East 5', street: '5 Rainham Road North', postcode: 'RM10 0XS', lat: 51.547, lng: 0.165, district: 'Barking and Dagenham', brma: 'Outer East London', supplierId: 'SUP-PSL', unitType: 'psl', bedrooms: 5, maxOccupants: 9, grade: 'B', nightly: 110 },
+  // Further away in London
+  { id: 'P16', label: 'Romford Central 6', street: '6 Victoria Road', postcode: 'RM1 0XT', lat: 51.577, lng: 0.183, district: 'Havering', brma: 'Outer East London', bedrooms: 3, maxOccupants: 6, grade: 'B', nightly: 85 },
+  { id: 'P17', label: 'Hornchurch 11', street: '11 Station Lane', postcode: 'RM12 0XU', lat: 51.556, lng: 0.218, district: 'Havering', brma: 'Outer East London', bedrooms: 4, maxOccupants: 8, floor: 0, stepFree: true, wheelchair: true, adaptedBathroom: true, petsAllowed: true, grade: 'A', reservedForAccessNeeds: true, nightly: 98 },
+  { id: 'P18', label: 'Enfield Lock 4', street: '4 Ordnance Road', postcode: 'EN3 0XV', lat: 51.67, lng: -0.03, district: 'Enfield', brma: 'Outer North East London', bedrooms: 3, maxOccupants: 6, grade: 'B', nightly: 96, noInspection: true },
+  { id: 'P25', label: 'Croydon Fairfield 10', street: '10 Park Lane Mews', postcode: 'CR0 0XW', lat: 51.372, lng: -0.099, district: 'Croydon', brma: 'Outer South London', bedrooms: 3, maxOccupants: 6, grade: 'B', nightly: 99 },
+  // Outside London
+  { id: 'P19', label: 'Harlow Old Town 2', street: '2 Mulberry Green', postcode: 'CM17 0XX', lat: 51.772, lng: 0.102, district: 'Harlow', brma: 'Harlow & Stortford', inLondon: false, supplierId: 'SUP-CW', bedrooms: 3, maxOccupants: 6, grade: 'B', nightly: 74 },
+  { id: 'P20', label: 'Basildon Village 9', street: '9 Laindon Link', postcode: 'SS14 0XY', lat: 51.576, lng: 0.488, district: 'Basildon', brma: 'Basildon', inLondon: false, supplierId: 'SUP-CW', bedrooms: 3, maxOccupants: 6, grade: 'B', nightly: 70 },
+  { id: 'P21', label: 'Grays Riverside 3', street: '3 Thames Road', postcode: 'RM17 0XZ', lat: 51.476, lng: 0.323, district: 'Thurrock', brma: 'Basildon', inLondon: false, supplierId: 'SUP-CW', bedrooms: 2, maxOccupants: 4, grade: 'C', nightly: 68, epcBand: 'F' },
+  { id: 'P22', label: 'Luton Park 17', street: '17 Wardown Crescent', postcode: 'LU2 0XA', lat: 51.879, lng: -0.417, district: 'Luton', brma: 'Luton', inLondon: false, supplierId: 'SUP-CW', bedrooms: 4, maxOccupants: 8, grade: 'B', nightly: 76 },
+  { id: 'P23', label: 'Milton Keynes Central 5', street: '5 Saxon Gate Row', postcode: 'MK9 0XB', lat: 52.041, lng: -0.759, district: 'Milton Keynes', brma: 'Milton Keynes', inLondon: false, supplierId: 'SUP-CW', bedrooms: 3, maxOccupants: 6, grade: 'A', nightly: 64 },
+  { id: 'P24', label: 'Chelmsford Springfield 1', street: '1 Springfield Court', postcode: 'CM1 0XC', lat: 51.736, lng: 0.469, district: 'Chelmsford', brma: 'Chelmsford', inLondon: false, supplierId: 'SUP-CW', bedrooms: 2, maxOccupants: 4, floor: 0, stepFree: true, wheelchair: true, adaptedBathroom: true, petsAllowed: true, grade: 'B', reservedForAccessNeeds: true, nightly: 72 },
+]
+
+function compliance(s: Spec, today: string, i: number): ComplianceItem[] {
+  const items: ComplianceItem[] = []
+  const hasGas = s.hasGas ?? s.unitType !== 'bnb'
+  if (hasGas) {
+    items.push({ type: 'gas_safety', issued: addDays(today, -200), expires: s.gasExpiredDaysAgo ? addDays(today, -s.gasExpiredDaysAgo) : addDays(today, 150 + ((i * 53) % 215)), evidenceRef: `GS-${s.id}` })
+  }
+  items.push({ type: 'eicr', issued: addDays(today, -400), expires: addDays(today, s.eicrExpiresInDays ?? 1400), evidenceRef: `EICR-${s.id}` })
+  items.push({ type: 'epc', issued: addDays(today, -900), expires: addDays(today, 2700), rating: s.epcBand ?? (s.grade === 'A' ? 'C' : 'D'), evidenceRef: `EPC-${s.id}` })
+  items.push({ type: 'smoke_co_alarms', issued: addDays(today, -40), evidenceRef: `ALM-${s.id}` })
+  if (s.isHmo || s.unitType === 'bnb' || s.unitType === 'annex_shared') {
+    items.push({ type: 'fire_risk', issued: addDays(today, -120), expires: addDays(today, 245), evidenceRef: `FRA-${s.id}` })
+  }
+  if (s.isHmo) items.push({ type: 'hmo_licence', issued: addDays(today, -700), expires: addDays(today, 1100), evidenceRef: `HMO-${s.id}` })
+  if (!s.noInspection) items.push({ type: 'inspection', issued: addDays(today, -60), evidenceRef: `INSP-${s.id}` })
+  return items
+}
+
+export function seedProperties(today: string, now: string): Property[] {
+  return SPECS.map((s, i) => {
+    const unitType = s.unitType ?? 'self_contained_nightly'
+    const confirmed = new Date(now)
+    confirmed.setDate(confirmed.getDate() - (s.confirmedDaysAgo ?? 0))
+    confirmed.setHours(8, 30 + (i % 4) * 10, 0, 0)
+    if (confirmed.getTime() > new Date(now).getTime()) confirmed.setDate(confirmed.getDate() - 1)
+    return {
+      id: s.id,
+      uprn: `1000${String(42000 + i * 37).padStart(8, '0')}`,
+      label: s.label,
+      address: `${s.street}, ${s.district} ${s.postcode} (synthetic)`,
+      postcode: s.postcode,
+      location: { lat: s.lat, lng: s.lng },
+      district: s.district,
+      brma: s.brma,
+      inLondon: s.inLondon ?? true,
+      supplierId: s.supplierId ?? 'SUP-NL',
+      unitType,
+      selfContained: unitType !== 'bnb' && unitType !== 'annex_shared',
+      bedrooms: s.bedrooms,
+      maxOccupants: s.maxOccupants ?? s.bedrooms * 2,
+      floor: s.floor ?? 0,
+      lift: s.lift ?? false,
+      stepFree: s.stepFree ?? false,
+      wheelchairAccessible: s.wheelchair ?? false,
+      adaptedBathroom: s.adaptedBathroom ?? false,
+      petsAllowed: s.petsAllowed ?? false,
+      hasGas: s.hasGas ?? unitType !== 'bnb',
+      isHmo: s.isHmo ?? false,
+      inspectionGrade: s.grade,
+      reservedForAccessNeeds: s.reservedForAccessNeeds,
+      nightlyCharge: s.nightly,
+      householdChargeWeekly: s.householdWeekly ?? 0,
+      availableFrom: addDays(today, s.availableFrom ?? -2),
+      availableUntil: s.availableUntil !== undefined ? addDays(today, s.availableUntil) : undefined,
+      availabilityConfirmedAt: confirmed.toISOString(),
+      availabilityConfirmedBy: s.unitType === 'psl' ? 'Leasing team' : 'TA team (phone)',
+      compliance: compliance(s, today, i),
+    }
+  })
+}

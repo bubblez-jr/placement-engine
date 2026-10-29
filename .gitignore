@@ -1,0 +1,9 @@
+node_modules
+dist
+dist-demo
+*.local
+.env
+.env.*
+!.env.example
+screenshots/
+.DS_Store
