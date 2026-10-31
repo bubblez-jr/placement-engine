@@ -32,7 +32,7 @@ export function Rules() {
   }
 
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-6">
       <PageHeader eyebrow="Placement policy" title={`${activeRuleset.name}, v${activeRuleset.version}`}>
         The council’s published placement policy as rules the engine applies the same way every time. Every decision records the version and its hash.
       </PageHeader>

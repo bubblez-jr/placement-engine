@@ -3,7 +3,7 @@ import { useApp } from '../../store/app'
 import { useNav } from '../../store/nav'
 import { formatDateTime } from '../../engine/dates'
 import type { OverrideReason } from '../../engine/types'
-import { gbp, PageHeader, Section, TierChip } from '../bits'
+import { gbp, PageHeader, Section, TierTag } from '../bits'
 
 export const OVERRIDE_REASONS: [OverrideReason, string][] = [
   ['household_preference', 'Household’s informed preference'],
@@ -107,7 +107,7 @@ export function Decide({ searchId, propertyId }: { searchId: string; propertyId?
                 <span className="min-w-0 flex-1">
                   <span className="font-bold">{c.label}</span> {c.propertyId === s.recommendedId && <span className="chip chip-accent">Recommended</span>}
                   <span className="mt-1 flex flex-wrap gap-2 text-sm text-muted">
-                    <TierChip tier={c.tier} district={c.district} /> Suitability {c.score} · TA budget {gbp(c.cost.taNetPerNight, 2)}/night
+                    <TierTag tier={c.tier} district={c.district} /> Suitability {c.score} · TA budget {gbp(c.cost.taNetPerNight, 2)}/night
                   </span>
                 </span>
               </label>

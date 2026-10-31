@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import type { Candidate, CriterionKey, CriterionScore, GateCheck } from '../engine/types'
 import { TIER_LABEL } from '../engine/scoring'
+import { Icon } from './icons'
 
 export const IS_DEMO_BUILD = import.meta.env.MODE === 'demo'
 
@@ -21,28 +22,81 @@ export const SERIES: Record<CriterionKey, string> = {
   stability: 'var(--s8)',
 }
 
-export function PageHeader({ eyebrow, title, children, actions }: { eyebrow?: string; title: string; children?: ReactNode; actions?: ReactNode }) {
+export function PageHeader({
+  eyebrow,
+  title,
+  children,
+  actions,
+  back,
+}: {
+  eyebrow?: string
+  title: string
+  children?: ReactNode
+  actions?: ReactNode
+  back?: { label: string; onClick: () => void }
+}) {
   return (
-    <header className="flex flex-wrap items-end justify-between gap-4 pb-5">
-      <div className="min-w-0 max-w-3xl">
-        {eyebrow && <div className="eyebrow mb-1">{eyebrow}</div>}
-        <h1 className="display text-[1.75rem] leading-tight">{title}</h1>
-        {children && <div className="mt-2 text-muted">{children}</div>}
+    <header className="grid gap-3 pb-6">
+      {back && (
+        <button className="flex w-fit items-center gap-1.5 text-sm font-medium text-muted hover:text-ink" onClick={back.onClick}>
+          <Icon name="arrow-left" size={15} />
+          {back.label}
+        </button>
+      )}
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="max-w-3xl min-w-0">
+          {eyebrow && <div className="eyebrow mb-1.5">{eyebrow}</div>}
+          <h1 className="display text-[1.7rem] leading-tight">{title}</h1>
+          {children && <div className="mt-1.5 text-muted">{children}</div>}
+        </div>
+        {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
       </div>
-      {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
     </header>
   )
 }
 
-export function Section({ title, children, aside, id }: { title: string; children: ReactNode; aside?: ReactNode; id?: string }) {
+export function Section({
+  title,
+  children,
+  aside,
+  id,
+  description,
+  flush = false,
+}: {
+  title: string
+  children: ReactNode
+  aside?: ReactNode
+  id?: string
+  description?: ReactNode
+  flush?: boolean
+}) {
   return (
-    <section className="panel p-4 sm:p-5" id={id}>
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-lg font-bold">{title}</h2>
-        {aside}
+    <section className="panel" id={id}>
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 border-b border-rule px-4 py-3.5 sm:px-5">
+        <div className="min-w-0">
+          <h2 className="text-[0.98rem] font-semibold">{title}</h2>
+          {description && <p className="mt-0.5 text-sm text-muted">{description}</p>}
+        </div>
+        {aside && <div className="flex flex-wrap items-center gap-2 text-sm text-muted">{aside}</div>}
       </div>
-      {children}
+      <div className={flush ? '' : 'p-4 sm:p-5'}>{children}</div>
     </section>
+  )
+}
+
+const TIER_COLOR: Record<1 | 2 | 3 | 4, string> = { 1: 'var(--good)', 2: 'var(--accent)', 3: 'var(--warn)', 4: 'var(--bad)' }
+
+/** Location tier as a coloured dot with the district: quieter than a chip in dense tables. */
+export function TierTag({ tier, district, compact = false }: { tier: 1 | 2 | 3 | 4; district?: string; compact?: boolean }) {
+  return (
+    <span className="inline-flex items-baseline gap-1.5 text-sm text-muted" title={`Tier ${tier}: ${TIER_LABEL[tier]}`}>
+      <span className="dot relative top-[-1px]" style={{ background: TIER_COLOR[tier] }} />
+      <span>
+        {district}
+        {district ? ' · ' : ''}
+        {compact ? `tier ${tier}` : TIER_LABEL[tier].toLowerCase()}
+      </span>
+    </span>
   )
 }
 
@@ -57,20 +111,11 @@ export function TierChip({ tier, district }: { tier: 1 | 2 | 3 | 4; district?: s
 }
 
 export function CheckIcon({ ok, warn }: { ok: boolean; warn?: boolean }) {
-  if (warn)
-    return (
-      <span aria-label="Warning" className="font-bold text-warn">
-        !
-      </span>
-    )
+  if (warn) return <Icon name="alert" size={16} className="mt-0.5 text-warn" aria-label="Warning" />
   return ok ? (
-    <span aria-label="Pass" className="font-bold text-good">
-      ✓
-    </span>
+    <Icon name="check" size={16} className="mt-0.5 text-good" aria-label="Pass" />
   ) : (
-    <span aria-label="Fail" className="font-bold text-bad">
-      ✕
-    </span>
+    <Icon name="x" size={16} className="mt-0.5 text-bad" aria-label="Fail" />
   )
 }
 
@@ -88,14 +133,6 @@ export function GateList({ checks, showPasses = true, columns = false }: { check
         </li>
       ))}
     </ul>
-  )
-}
-
-export function Banner() {
-  return (
-    <div className="chip chip-warn" title="Every household, property and place in this demo is invented">
-      Synthetic demo data
-    </div>
   )
 }
 
@@ -170,6 +207,40 @@ export function ScoreBar({ criteria, score, height = 12 }: { criteria: Criterion
         {score.toFixed(0)}
       </span>
     </div>
+  )
+}
+
+/** Suitability as a ring gauge. */
+export function ScoreRing({ score, size = 68 }: { score: number; size?: number }) {
+  const r = (size - 8) / 2
+  const c = 2 * Math.PI * r
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`Suitability ${score.toFixed(0)} out of 100`} className="shrink-0">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--sunken)" strokeWidth={6} />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke="var(--accent)"
+        strokeWidth={6}
+        strokeLinecap="round"
+        strokeDasharray={`${(c * Math.max(0, Math.min(100, score))) / 100} ${c}`}
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+      />
+      <text
+        x="50%"
+        y="50%"
+        dominantBaseline="central"
+        textAnchor="middle"
+        fontSize={size * 0.3}
+        fontWeight={600}
+        fill="var(--ink)"
+        style={{ fontVariantNumeric: 'tabular-nums' }}
+      >
+        {score.toFixed(0)}
+      </text>
+    </svg>
   )
 }
 

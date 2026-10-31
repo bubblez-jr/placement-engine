@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useApp } from '../../store/app'
 import { useNav } from '../../store/nav'
-import { formatDateTime } from '../../engine/dates'
+import { formatDate, formatDateTime } from '../../engine/dates'
 import { rejectionSummary } from '../../engine/explain'
 import { CRITERIA_ORDER } from '../criteria'
-import { FactorLegend, gbp, PageHeader, ScatterPlot, ScoreBar, Section, TierChip } from '../bits'
+import { FactorLegend, gbp, PageHeader, ScatterPlot, ScoreBar, ScoreRing, Section, TierTag } from '../bits'
+import { Icon } from '../icons'
 import { MiniMap } from '../MiniMap'
 import { shortHash } from '../../audit/hash'
 
@@ -28,10 +29,20 @@ export function Results({ searchId }: { searchId: string }) {
   const toggle = (pid: string) => setCompare(c => (c.includes(pid) ? c.filter(x => x !== pid) : c.length >= 3 ? [...c.slice(1), pid] : [...c, pid]))
   const compareIds = compare.length >= 2 ? compare : eligible.slice(0, 3).map(c => c.propertyId)
 
+  const hh = s.household
+  const adults = hh.members.filter(m => m.role === 'adult').length
+  const kids = hh.members.length - adults
+  const facts = [
+    `${adults} adult${adults === 1 ? '' : 's'}${kids ? `, ${kids} child${kids === 1 ? '' : 'ren'}` : ''}`,
+    `${s.bedroomNeed} bedroom${s.bedroomNeed === 1 ? '' : 's'}`,
+    `${hh.expectedNights} nights from ${formatDate(hh.needFrom)}`,
+    hh.homeAreaLabel,
+  ]
+
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-6">
       <PageHeader
-        eyebrow={`Case ${s.household.caseRef} · searched ${formatDateTime(s.createdAt)}`}
+        eyebrow={`Case ${hh.caseRef} · searched ${formatDateTime(s.createdAt)}`}
         title="Placement options"
         actions={
           <>
@@ -46,35 +57,56 @@ export function Results({ searchId }: { searchId: string }) {
           </>
         }
       >
-        {s.candidates.length} properties checked · <b>{eligible.length} eligible</b> · household needs {s.bedroomNeed} bedroom{s.bedroomNeed === 1 ? '' : 's'}{' '}
-        for {s.household.expectedNights} nights
+        <span className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+          {facts.map(f => (
+            <span key={f}>{f}</span>
+          ))}
+        </span>
       </PageHeader>
 
       {decided && (
-        <p className="rounded-md border border-good bg-good-soft px-3 py-2 text-good">
-          Decision recorded as #{decided.seq}.{' '}
+        <div
+          className="callout flex flex-wrap items-center gap-2 text-sm"
+          style={{ background: 'var(--good-soft)', borderColor: 'transparent', color: 'var(--good)' }}
+        >
+          <Icon name="check" size={16} />
+          Decision recorded as #{decided.seq}.
           <button className="link" onClick={() => go({ view: 'decision', seq: decided.seq })}>
             Open the decision
           </button>
-        </p>
+        </div>
       )}
 
-      <section className="panel border-2 p-4 sm:p-5" style={{ borderColor: rec ? 'var(--accent)' : 'var(--bad)' }} aria-labelledby="rec-h">
-        <div className="eyebrow mb-1">{rec ? 'Recommendation' : 'No recommendation'}</div>
-        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_240px]">
-          <div className="min-w-0 max-w-3xl">
-            <h2 id="rec-h" className="display text-2xl">
+      <section className="panel overflow-hidden" aria-labelledby="rec-h">
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 border-b border-rule px-5 py-3"
+          style={{ background: rec ? 'var(--accent-soft)' : 'var(--bad-soft)' }}
+        >
+          <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: rec ? 'var(--accent)' : 'var(--bad)' }}>
+            <Icon name={rec ? 'check' : 'alert'} size={16} />
+            {rec ? 'Recommendation' : 'No suitable option'}
+          </span>
+          <span className="num text-sm text-muted">
+            {s.candidates.length} checked · <b className="text-ink">{eligible.length} eligible</b> · {rejected.length} ruled out
+          </span>
+        </div>
+        <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1fr)_250px]">
+          <div className="max-w-3xl min-w-0">
+            <h2 id="rec-h" className="display text-[1.45rem] leading-snug">
               {s.explanation.headline}
             </h2>
-            <ul className="mt-3 grid gap-2">
+            <ul className="mt-3 grid gap-2.5">
               {s.explanation.reasons.map((r, i) => (
-                <li key={i}>{r}</li>
+                <li key={i} className="flex gap-2.5">
+                  <Icon name="check" size={16} className="mt-1 shrink-0 text-accent" />
+                  <span>{r}</span>
+                </li>
               ))}
             </ul>
             {s.explanation.cost.length > 0 && (
-              <div className="mt-3 rounded-md bg-sunken p-3">
-                <div className="eyebrow mb-1">Cost, by who pays</div>
-                <ul className="grid gap-1">
+              <div className="callout mt-4">
+                <div className="eyebrow mb-1.5">Cost, by who pays</div>
+                <ul className="grid gap-1 text-[0.92rem]">
                   {s.explanation.cost.map((r, i) => (
                     <li key={i}>{r}</li>
                   ))}
@@ -82,56 +114,72 @@ export function Results({ searchId }: { searchId: string }) {
               </div>
             )}
             {s.explanation.caveats.length > 0 && (
-              <ul className="mt-3 grid gap-1.5">
+              <ul className="mt-4 grid gap-2">
                 {s.explanation.caveats.map((c, i) => (
-                  <li key={i} className="flex gap-2 text-sm">
-                    <span className="chip chip-warn shrink-0">Check</span>
+                  <li key={i} className="flex gap-2.5 text-sm">
+                    <Icon name="alert" size={16} className="mt-0.5 shrink-0 text-warn" />
                     <span>{c}</span>
                   </li>
                 ))}
               </ul>
             )}
+            <div className="mt-5 flex flex-wrap gap-2">
+              {rec && !decided && (
+                <button className="btn btn-primary" onClick={() => go({ view: 'decide', searchId, propertyId: rec.propertyId })}>
+                  Review and record decision
+                  <Icon name="arrow-right" size={16} />
+                </button>
+              )}
+              {!rec && !decided && (
+                <button className="btn btn-primary" onClick={() => go({ view: 'decide', searchId })}>
+                  Record that nothing suitable is available
+                </button>
+              )}
+              {rec && (
+                <button className="btn" onClick={() => openProperty(rec.propertyId)}>
+                  Why this property
+                </button>
+              )}
+            </div>
           </div>
           {rec && (
-            <div className="grid gap-3 rounded-lg bg-accent-soft p-3">
-              <div>
-                <div className="eyebrow">Suitability</div>
-                <div className="display text-3xl text-accent">
-                  {rec.score.toFixed(0)}
-                  <span className="text-base text-muted">/100</span>
+            <div className="grid content-start gap-4 rounded-xl border border-rule p-4">
+              <div className="flex items-center gap-4">
+                <ScoreRing score={rec.score} />
+                <div>
+                  <div className="text-xs font-medium text-muted">Suitability</div>
+                  <div className="text-sm text-muted">out of 100</div>
                 </div>
               </div>
-              <div>
-                <div className="eyebrow">TA budget, after subsidy</div>
-                <div className="num text-lg font-bold">{gbp(rec.cost.taNetPerNight, 2)} a night</div>
+              <div className="border-t border-rule pt-3">
+                <div className="text-xs font-medium text-muted">TA budget after subsidy</div>
+                <div className="num text-lg font-semibold">
+                  {gbp(rec.cost.taNetPerNight, 2)} <span className="text-sm font-normal text-muted">a night</span>
+                </div>
               </div>
-              <div>
-                {s.sensitivity.status === 'robust' && <span className="chip chip-good !whitespace-normal">Robust: holds if any weight moves 20%</span>}
-                {s.sensitivity.status === 'close_call' && <span className="chip chip-warn !whitespace-normal">Close call: weight changes flip it</span>}
+              <div className="border-t border-rule pt-3">
+                <TierTag tier={rec.tier} district={rec.district} />
+              </div>
+              <div className="grid gap-1 border-t border-rule pt-3">
+                {s.sensitivity.status === 'robust' && (
+                  <span className="flex items-start gap-1.5 text-sm text-good">
+                    <Icon name="shield" size={16} className="mt-0.5 shrink-0" />
+                    Robust: holds if any weight moves 20%
+                  </span>
+                )}
+                {s.sensitivity.status === 'close_call' && (
+                  <span className="flex items-start gap-1.5 text-sm text-warn">
+                    <Icon name="alert" size={16} className="mt-0.5 shrink-0" />
+                    Close call: some weight changes flip it
+                  </span>
+                )}
                 {s.tieBreakApplied && (
-                  <div className="mt-1 text-xs text-muted">
+                  <span className="text-xs text-muted">
                     Cost tie-break applied (within {data.rulesets.find(r => r.hash === s.rulesetHash)?.costTieBreakBand ?? 3} points)
-                  </div>
+                  </span>
                 )}
               </div>
             </div>
-          )}
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {rec && !decided && (
-            <button className="btn btn-primary" onClick={() => go({ view: 'decide', searchId, propertyId: rec.propertyId })}>
-              Review and record decision
-            </button>
-          )}
-          {!rec && !decided && (
-            <button className="btn btn-primary" onClick={() => go({ view: 'decide', searchId })}>
-              Record that nothing suitable is available
-            </button>
-          )}
-          {rec && (
-            <button className="btn" onClick={() => openProperty(rec.propertyId)}>
-              Why this property
-            </button>
           )}
         </div>
       </section>
@@ -148,18 +196,23 @@ export function Results({ searchId }: { searchId: string }) {
       )}
 
       {eligible.length > 0 && (
-        <Section title={`Eligible options (${eligible.length})`} aside={<FactorLegend keys={applicable} />}>
+        <Section
+          title={`Eligible options (${eligible.length})`}
+          description="Ranked by suitability. Hover a bar to see each factor's points."
+          aside={<FactorLegend keys={applicable} />}
+          flush
+        >
           <div className="scroll-x">
-            <table className="table min-w-[860px]">
+            <table className="table min-w-[840px]">
               <thead>
                 <tr>
-                  <th>Rank</th>
+                  <th className="pl-5">Rank</th>
                   <th>Property</th>
-                  <th className="w-[30%]">Suitability, by factor</th>
-                  <th className="text-right">TA budget / night</th>
-                  <th className="text-right">Education / school day</th>
-                  <th className="text-right">Public cost of stay</th>
-                  <th>Compare</th>
+                  <th className="w-[26%]">Suitability, by factor</th>
+                  <th className="text-right">TA / night</th>
+                  <th className="text-right">Education / day</th>
+                  <th className="text-right">Public, whole stay</th>
+                  <th className="pr-5">Compare</th>
                 </tr>
               </thead>
               <tbody>
@@ -167,14 +220,23 @@ export function Results({ searchId }: { searchId: string }) {
                   const isRec = c.propertyId === s.recommendedId
                   const edu = c.cost.lines.filter(l => l.budgetHolder === 'education').reduce((a, l) => a + l.perUnit, 0)
                   return (
-                    <tr key={c.propertyId} style={isRec ? { background: 'var(--accent-soft)' } : undefined}>
-                      <td className="num font-bold">{c.rank}</td>
-                      <td className="min-w-0">
-                        <button className="link text-left" onClick={() => openProperty(c.propertyId)}>
+                    <tr key={c.propertyId} style={isRec ? { background: 'color-mix(in oklab, var(--accent-soft) 60%, transparent)' } : undefined}>
+                      <td className="pl-5">
+                        <span
+                          className="num flex h-7 w-7 items-center justify-center rounded-full text-[0.8rem] font-semibold"
+                          style={isRec ? { background: 'var(--accent)', color: 'var(--accent-ink)' } : { background: 'var(--sunken)', color: 'var(--muted)' }}
+                        >
+                          {c.rank}
+                        </span>
+                      </td>
+                      <td className="min-w-[230px]">
+                        <button className="link text-left text-ink" onClick={() => openProperty(c.propertyId)}>
                           {c.label}
                         </button>
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          <TierChip tier={c.tier} district={c.district} />
+                        <div className="mt-0.5">
+                          <TierTag tier={c.tier} district={c.district} compact />
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap gap-1 empty:hidden">
                           {isRec && <span className="chip chip-accent">Recommended</span>}
                           {c.lastResort && <span className="chip chip-bad">Last resort</span>}
                           {c.pareto && !isRec && (
@@ -207,7 +269,7 @@ export function Results({ searchId }: { searchId: string }) {
               </tbody>
             </table>
           </div>
-          <p className="mt-3 text-xs text-muted">
+          <p className="border-t border-rule px-5 py-3 text-xs text-muted">
             TA budget is the nightly charge less the housing benefit subsidy the council can reclaim. Education is home-to-school travel the council funds under
             its policy. Public cost of stay = both, over {s.household.expectedNights} nights.
           </p>
@@ -219,7 +281,7 @@ export function Results({ searchId }: { searchId: string }) {
         aside={<span className="text-sm text-muted">{rejectionSummary(s.candidates).slice(0, 4).join(' · ')}</span>}
       >
         <details>
-          <summary className="cursor-pointer font-bold text-accent">Show every ruled-out property and why</summary>
+          <summary className="cursor-pointer text-sm font-semibold text-accent">Show every ruled-out property and why</summary>
           <div className="scroll-x mt-3">
             <table className="table min-w-[640px]">
               <thead>
@@ -242,7 +304,10 @@ export function Results({ searchId }: { searchId: string }) {
                       <ul className="grid gap-0.5">
                         {c.blocks.map((b, i) => (
                           <li key={i}>
-                            <span className="text-bad">✕</span> {b.message}
+                            <span className="inline-flex gap-1.5">
+                              <Icon name="x" size={14} className="mt-1 shrink-0 text-bad" />
+                              {b.message}
+                            </span>
                           </li>
                         ))}
                       </ul>

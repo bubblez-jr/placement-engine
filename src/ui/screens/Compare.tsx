@@ -37,15 +37,11 @@ export function Compare({ searchId, ids: initialIds }: { searchId: string; ids: 
   )
 
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-6">
       <PageHeader
+        back={{ label: 'Back to options', onClick: () => go({ view: 'results', searchId }) }}
         eyebrow={`Case ${s.household.caseRef} · comparison`}
         title="Compare options"
-        actions={
-          <button className="btn" onClick={() => go({ view: 'results', searchId })}>
-            Back to options
-          </button>
-        }
       >
         Pick two or three eligible options. Costs are split by who pays; journeys are per person.
       </PageHeader>

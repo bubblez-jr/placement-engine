@@ -14,7 +14,7 @@ export function AuditLog() {
   const run = async () => setCheck(await verify())
 
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-6">
       <PageHeader
         eyebrow="Evidence"
         title="Audit log"

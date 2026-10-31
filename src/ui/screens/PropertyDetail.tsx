@@ -5,7 +5,7 @@ import { formatDate, formatDateTime } from '../../engine/dates'
 import { whyHere } from '../../engine/explain'
 import { complianceLabel } from '../../engine/gates'
 import { BUDGET_LABEL, UNIT_LABEL } from '../criteria'
-import { gbp, GateList, PageHeader, SERIES, Section, TierChip } from '../bits'
+import { gbp, GateList, PageHeader, SERIES, Section, TierTag } from '../bits'
 
 export function PropertyDetail({ searchId, propertyId }: { searchId: string; propertyId: string }) {
   const { getSearch, data, noteReview } = useApp()
@@ -24,15 +24,13 @@ export function PropertyDetail({ searchId, propertyId }: { searchId: string; pro
   const decided = data.chain.some(r => r.snapshot.search.id === s.id)
 
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-6">
       <PageHeader
+        back={{ label: 'Back to options', onClick: () => go({ view: 'results', searchId }) }}
         eyebrow={`Case ${s.household.caseRef} · option detail`}
         title={p.label}
         actions={
           <>
-            <button className="btn" onClick={() => go({ view: 'results', searchId })}>
-              Back to options
-            </button>
             {c.eligible && rec && rec.propertyId !== c.propertyId && (
               <button className="btn" onClick={() => go({ view: 'compare', searchId, ids: [rec.propertyId, c.propertyId] })}>
                 Compare with the recommendation
@@ -51,7 +49,7 @@ export function PropertyDetail({ searchId, propertyId }: { searchId: string; pro
       </PageHeader>
 
       <div className="flex flex-wrap items-center gap-2">
-        <TierChip tier={c.tier} district={c.district} />
+        <TierTag tier={c.tier} district={c.district} />
         {c.eligible ? <span className="chip chip-good">Eligible · rank {c.rank}</span> : <span className="chip chip-bad">Ruled out</span>}
         {c.propertyId === s.recommendedId && <span className="chip chip-accent">Recommended</span>}
         {c.lastResort && <span className="chip chip-bad">Last resort</span>}

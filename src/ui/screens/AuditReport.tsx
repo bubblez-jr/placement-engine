@@ -8,6 +8,7 @@ import { TIER_LABEL } from '../../engine/scoring'
 import { BUDGET_LABEL, CRITERIA_ORDER, UNIT_LABEL } from '../criteria'
 import { OVERRIDE_REASONS } from './Decide'
 import { gbp, IS_DEMO_BUILD } from '../bits'
+import { Icon } from '../icons'
 
 function downloadBlob(name: string, blob: Blob) {
   const url = URL.createObjectURL(blob)
@@ -52,7 +53,8 @@ export function AuditReport({ seq }: { seq: number }) {
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <button className="btn" onClick={() => go({ view: 'decision', seq })}>
+        <button className="flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink" onClick={() => go({ view: 'decision', seq })}>
+          <Icon name="arrow-left" size={15} />
           Back to the decision
         </button>
         <div className="flex flex-wrap items-center gap-2">

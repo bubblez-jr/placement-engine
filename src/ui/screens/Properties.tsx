@@ -37,7 +37,7 @@ export function Properties() {
   }
 
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-6">
       <PageHeader eyebrow="Supply" title="Properties">
         What the engine can offer: the council’s own stock and approved suppliers’ units. The MVP takes a CSV; a pilot imports from the council’s booking
         platform.

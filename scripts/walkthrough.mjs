@@ -50,7 +50,7 @@ await page.waitForSelector('text=Seal intact')
 await page.screenshot({ path: out('08-audit-pack.png'), fullPage: true })
 
 // Second decision: an override, from the large-family scenario
-await page.click('nav >> text=Placements')
+await page.click('nav >> text=Overview')
 await page.click('text=Two adults and five children, exam year')
 await page.click('button:has-text("Find placements")')
 await page.waitForSelector('text=Placement options')
@@ -77,7 +77,7 @@ await page.click('nav >> text=Properties')
 await page.waitForSelector('text=Import from a spreadsheet')
 await page.screenshot({ path: out('12-properties.png'), fullPage: true })
 
-await page.click('nav >> text=Placements')
+await page.click('nav >> text=Overview')
 await page.screenshot({ path: out('13-home-after.png'), fullPage: true })
 
 // Out-of-hours scenario: last resort + 6-week clock

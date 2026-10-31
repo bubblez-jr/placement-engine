@@ -78,7 +78,7 @@ Contact: ${d.officer}, ${ruleset.councilName}`
       : null
 
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-6">
       <PageHeader
         eyebrow={`Decision record #${r.seq} · sealed ${formatDateTime(r.snapshot.frozenAt)}`}
         title={chosen ? `Placement recorded: ${chosen.label}` : 'No suitable option recorded'}
