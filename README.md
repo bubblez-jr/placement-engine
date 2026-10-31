@@ -93,7 +93,14 @@ The market research, competitor review and commercial plan behind the product ar
 
 ## Deploy
 
-Vercel with the **Vite** preset: build `npm run build`, output `dist`. There is no server yet, so all data lives in the viewer's browser and each person sees their own demo.
+Live demo: **placement.book-flo.com** (Vercel project `placement-engine`, deploys on every push to `main`).
+
+Setup, once:
+
+1. Vercel → **Add New → Project** → import `bubblez-jr/placement-engine`. `vercel.json` sets the build (Vite, `npm run build`, `dist`), so just press **Deploy**.
+2. Project → **Settings → Domains** → add `placement.book-flo.com`.
+
+The demo is kept out of search engines (`noindex`). There is no server yet, so all data lives in the viewer's browser and each person sees their own demo; **Audit log → Reset demo data** starts fresh.
 
 ## Not in the MVP, on purpose
 
