@@ -7,7 +7,7 @@ import type { ChainCheck } from '../../audit/chain'
 import { TIER_LABEL } from '../../engine/scoring'
 import { BUDGET_LABEL, CRITERIA_ORDER, UNIT_LABEL } from '../criteria'
 import { OVERRIDE_REASONS } from './Decide'
-import { clocksNow, consentAtDecision, consentSummary, currentConsent, decisionRecords, deciderOf, eventsAbout, recordKind } from '../../audit/records'
+import { clocksNow, consentAtDecision, consentSummary, currentConsent, decisionRecords, deciderOf, statusLine, storyOf, termsRows } from '../../audit/records'
 import { AccessAnswers } from '../accessView'
 import { ConsentText } from '../consent'
 import { gbp, IS_DEMO_BUILD } from '../bits'
@@ -23,7 +23,7 @@ function downloadBlob(name: string, blob: Blob) {
 }
 
 export function AuditReport({ seq }: { seq: number }) {
-  const { data, verify } = useApp()
+  const { data, verify, now } = useApp()
   const { go } = useNav()
   const [check, setCheck] = useState<ChainCheck | null>(null)
   const [pdfBusy, setPdfBusy] = useState(false)
@@ -37,7 +37,8 @@ export function AuditReport({ seq }: { seq: number }) {
   const clocks = clocksNow(data.chain, r)
   const by = deciderOf(r.snapshot)
   const consent = currentConsent(data.chain, r)
-  const later = eventsAbout(data.chain, r.seq)
+  const story = storyOf(data.chain, r)
+  const terms = termsRows(r)
   const eligible = s.candidates.filter(c => c.eligible).sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
   const rejected = s.candidates.filter(c => !c.eligible)
   const chosen = s.candidates.find(c => c.propertyId === d.chosenPropertyId)
@@ -51,7 +52,7 @@ export function AuditReport({ seq }: { seq: number }) {
     setPdfBusy(true)
     try {
       const { renderAuditPdf } = await import('../../pdf/AuditPdf')
-      downloadBlob(`placement-decision-${r!.seq}-${s.household.caseRef}.pdf`, await renderAuditPdf(r!, data.chain))
+      downloadBlob(`placement-decision-${r!.seq}-${s.household.caseRef}.pdf`, await renderAuditPdf(r!, data.chain, new Date().toISOString()))
     } finally {
       setPdfBusy(false)
     }
@@ -190,6 +191,12 @@ export function AuditReport({ seq }: { seq: number }) {
                 <td>“{d.reasonText}”</td>
               </tr>
             )}
+            {terms.map(([k, v]) => (
+              <tr key={k}>
+                <td className="text-muted">{k}</td>
+                <td>{v}</td>
+              </tr>
+            ))}
             <tr>
               <td className="text-muted">Review before deciding</td>
               <td>
@@ -413,23 +420,31 @@ export function AuditReport({ seq }: { seq: number }) {
           </>
         )}
 
-        {later.length > 0 && (
-          <>
-            <h2>9. Later records about this decision</h2>
-            <p className="mt-2 text-sm text-muted">Each is its own sealed record in the chain. This decision record is never edited.</p>
-            <ul className="mt-1 grid gap-1 text-sm">
-              {later.map(e => (
-                <li key={e.seq}>
-                  <b className="num">#{e.seq}</b> {formatDateTime(e.snapshot.at)}, {e.snapshot.actor.name} ({e.snapshot.actor.roleLabel.toLowerCase()}):{' '}
-                  {e.snapshot.event.type === 'consent_updated' ? consentSummary({ kind: 'record', consent: e.snapshot.event.consent }) : recordKind(e)}
-                  <span className="hash block break-all text-muted">{e.rowHash}</span>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
+        <h2>9. What happened next</h2>
+        <p className="mt-2 text-sm text-muted">
+          The decision, then every later record about it, in the order they were sealed: approval, each step of the placement, consent changes and tasks
+          completed with their evidence. Each is its own record in the chain; the decision record is never edited.
+        </p>
+        <ol className="mt-2 grid gap-2 text-sm" id="story">
+          {story.map(e => (
+            <li key={e.seq} className="grid grid-cols-[3rem_1fr] gap-2">
+              <b className="num">#{e.seq}</b>
+              <span>
+                <span className="text-muted">
+                  {formatDateTime(e.at)}, {e.who}
+                </span>
+                <span className="block">{e.text}</span>
+                <span className="hash block break-all text-muted">{e.rowHash}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+        <p className="mt-2 rounded-md bg-sunken px-3 py-2 text-sm">
+          Where things stand when this page was opened ({formatDateTime(now)}): {statusLine(data.chain, r, now)}{' '}
+          <span className="text-muted">Worked out from the records above; not part of any sealed record.</span>
+        </p>
 
-        <h2>{later.length > 0 ? 10 : 9}. Method, data and seal</h2>
+        <h2>10. Method, data and seal</h2>
         <ul className="mt-2 grid gap-1 text-sm">
           <li>
             Journeys: {s.travelProvider.label}. {s.travelProvider.assumptions}. {s.travelProvider.disclaimer}

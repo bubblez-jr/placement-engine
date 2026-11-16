@@ -2,11 +2,24 @@ import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../../store/app'
 import { useNav } from '../../store/nav'
 import { useUser } from '../../auth/session'
-import { formatDateTime } from '../../engine/dates'
-import { hasChildren, validateDecision, type ConsentInput, type DecisionInput } from '../../engine/decision'
+import { addDays, formatDate, formatDateTime } from '../../engine/dates'
+import {
+  EMERGENCY_REASON_LABEL,
+  exceptionsFor,
+  hasChildren,
+  MOVE_ON_ROUTE_LABEL,
+  sixWeekRuleApplies,
+  validateDecision,
+  type ConsentInput,
+  type DecisionInput,
+} from '../../engine/decision'
+import { conflictsFor, occupancyMessage, OccupancyConflictError } from '../../engine/occupancy'
+import { bnbLimitDays, EXCEPTION_LABEL, placementPolicyOf } from '../../engine/policy'
+import { placementOwners } from '../../store/commands'
+import { Icon } from '../icons'
 import { check, ROLE_LABEL } from '../../engine/permissions'
 import { ValidationError } from '../../engine/validate'
-import type { Issue, OverrideReason } from '../../engine/types'
+import type { EmergencyReason, Issue, MoveOnRoute, OverrideReason } from '../../engine/types'
 import { decisionRecords } from '../../audit/records'
 import { ErrorSummary, Field, FieldError, fieldA11y, gbp, NotAllowed, PageHeader, Section, TierTag } from '../bits'
 import { ConsentFields } from '../consent'
@@ -22,7 +35,7 @@ export const OVERRIDE_REASONS: [OverrideReason, string][] = [
 ]
 
 export function Decide({ searchId, propertyId }: { searchId: string; propertyId?: string }) {
-  const { getSearch, decide, review, data } = useApp()
+  const { getSearch, decide, review, data, occupancy, search: runAgain } = useApp()
   const user = useUser()
   const { go } = useNav()
   const s = getSearch(searchId)
@@ -31,6 +44,9 @@ export function Decide({ searchId, propertyId }: { searchId: string; propertyId?
   const [text, setText] = useState('')
   const [startDate, setStartDate] = useState(s?.household.needFrom ?? '')
   const [consent, setConsent] = useState<ConsentInput>({})
+  const [emergency, setEmergency] = useState<NonNullable<DecisionInput['emergency']>>({})
+  const [plan, setPlan] = useState<NonNullable<DecisionInput['moveOnPlan']>>({})
+  const [conflict, setConflict] = useState<string | null>(null)
   const [confirmed, setConfirmed] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -52,8 +68,13 @@ export function Decide({ searchId, propertyId }: { searchId: string; propertyId?
     startDate,
     confirmedFullListReviewed: confirmed,
     consent,
+    emergency,
+    moveOnPlan: plan,
   }
-  const allIssues = s ? validateDecision(s, input) : []
+  const rs = s ? (data.rulesets.find(x => x.hash === s.rulesetHash) ?? data.rulesets[data.rulesets.length - 1]) : null
+  const chosenProp = data.properties.find(p => p.id === input.chosenPropertyId)
+  const owners = placementOwners()
+  const allIssues = s && rs ? validateDecision(s, input, { property: chosenProp, ruleset: rs, owners }) : []
   if (!s) return <p>Search not found.</p>
   const issues: Issue[] = showErrors ? allIssues : []
   const decided = decisionRecords(data.chain).find(r => r.snapshot.search.id === s.id)
@@ -64,6 +85,22 @@ export function Decide({ searchId, propertyId }: { searchId: string; propertyId?
   const rec = s.candidates.find(c => c.propertyId === s.recommendedId)
   const children = hasChildren(s.household)
   const r = review(searchId)
+  const exceptions = rs ? exceptionsFor(s, input, chosenProp, rs) : []
+  const sixWeek = !noneSuitable && sixWeekRuleApplies(s.household, chosenProp)
+  const limit = rs ? bnbLimitDays(rs) : 42
+  const holdHours = rs ? placementPolicyOf(rs).holdHours : 24
+  const takenNow =
+    !noneSuitable && choice && /^\d{4}-\d{2}-\d{2}$/.test(startDate)
+      ? conflictsFor(occupancy, choice, startDate, addDays(startDate, s.household.expectedNights))
+      : []
+  async function searchAgain() {
+    try {
+      const fresh = await runAgain(s!.household)
+      go({ view: 'results', searchId: fresh.id })
+    } catch {
+      go({ view: 'new', fromSearchId: s!.id })
+    }
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -81,7 +118,8 @@ export function Decide({ searchId, propertyId }: { searchId: string; propertyId?
       if (err instanceof ValidationError) {
         setShowErrors(true)
         setFocusSummary(n => n + 1)
-      } else setError(`The decision could not be saved: ${(err as Error).message}`)
+      } else if (err instanceof OccupancyConflictError) setConflict(err.message)
+      else setError(`The decision could not be saved: ${(err as Error).message}`)
       setBusy(false)
     }
   }
@@ -191,6 +229,137 @@ export function Decide({ searchId, propertyId }: { searchId: string; propertyId?
         >
           <ConsentFields household={s.household} value={consent} onChange={setConsent} issues={issues} />
         </Section>
+      )}
+
+      {sixWeek && (
+        <Section
+          id="six-week"
+          title="Family in B&B or shared accommodation"
+          description={`The law allows a family no more than ${limit / 7} weeks here. Record why there is no alternative tonight, and who will move them on, by when.`}
+        >
+          <div className="grid gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field id="emergency-reasonCode" label="Why shared accommodation" issues={issues}>
+                <select
+                  {...fieldA11y('emergency-reasonCode', issues)}
+                  className="input"
+                  value={emergency.reasonCode ?? ''}
+                  onChange={e => setEmergency(x => ({ ...x, reasonCode: e.target.value as EmergencyReason }))}
+                >
+                  <option value="">Choose a reason</option>
+                  {(Object.keys(EMERGENCY_REASON_LABEL) as EmergencyReason[]).map(k => (
+                    <option key={k} value={k}>
+                      {EMERGENCY_REASON_LABEL[k]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field id="moveon-owner" label="Who owns the move-on plan" issues={issues}>
+                <select
+                  {...fieldA11y('moveon-owner', issues)}
+                  className="input"
+                  value={plan.ownerUserId ?? ''}
+                  onChange={e => setPlan(x => ({ ...x, ownerUserId: e.target.value }))}
+                >
+                  <option value="">Choose a named person</option>
+                  {owners.map(o => (
+                    <option key={o.id} value={o.id}>
+                      {o.name} ({ROLE_LABEL[o.role].toLowerCase()})
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            <Field id="emergency-reasonText" label="The emergency, in your own words" issues={issues}>
+              <textarea
+                {...fieldA11y('emergency-reasonText', issues)}
+                className="input min-h-16"
+                value={emergency.reasonText ?? ''}
+                onChange={e => setEmergency(x => ({ ...x, reasonText: e.target.value }))}
+                placeholder="For example: excluded by family at 23:00; rang every approved supplier; nothing self-contained free tonight."
+              />
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field
+                id="moveon-targetDate"
+                label="Move on by"
+                hint={/^\d{4}-\d{2}-\d{2}$/.test(startDate) ? `No later than ${formatDate(addDays(startDate, limit))}.` : undefined}
+                issues={issues}
+              >
+                <input
+                  {...fieldA11y('moveon-targetDate', issues, 'moveon-targetDate-hint')}
+                  type="date"
+                  className="input"
+                  value={plan.targetDate ?? ''}
+                  onChange={e => setPlan(x => ({ ...x, targetDate: e.target.value }))}
+                />
+              </Field>
+              <Field id="moveon-route" label="Route being pursued" issues={issues}>
+                <select
+                  {...fieldA11y('moveon-route', issues)}
+                  className="input"
+                  value={plan.route ?? ''}
+                  onChange={e => setPlan(x => ({ ...x, route: e.target.value as MoveOnRoute }))}
+                >
+                  <option value="">Choose a route</option>
+                  {(Object.keys(MOVE_ON_ROUTE_LABEL) as MoveOnRoute[]).map(k => (
+                    <option key={k} value={k}>
+                      {MOVE_ON_ROUTE_LABEL[k]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            {plan.route === 'other' && (
+              <Field id="moveon-routeNote" label="Describe the route" issues={issues}>
+                <input
+                  {...fieldA11y('moveon-routeNote', issues)}
+                  className="input"
+                  value={plan.routeNote ?? ''}
+                  onChange={e => setPlan(x => ({ ...x, routeNote: e.target.value }))}
+                />
+              </Field>
+            )}
+            <p className="text-sm text-muted">
+              Weekly move-on reviews go to the plan’s owner; the team manager is brought in on day 28, it turns urgent on day 35, and the head of service is
+              told on day {limit}. These are in-app tasks: nobody is emailed yet.
+            </p>
+          </div>
+        </Section>
+      )}
+
+      {exceptions.length > 0 && (
+        <div className="callout border-warn bg-warn-soft" id="exceptions" role="status">
+          <div className="flex items-center gap-2 font-semibold text-warn">
+            <Icon name="stamp" size={17} />
+            This decision needs a manager’s approval
+          </div>
+          <ul className="mt-1.5 grid gap-0.5 pl-6 text-sm">
+            {exceptions.map(x => (
+              <li key={x} className="list-disc">
+                {EXCEPTION_LABEL[x]}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-sm">
+            {noneSuitable
+              ? 'It goes to the managers’ approval queue when you record it.'
+              : `The property is held for ${holdHours} hours while a manager decides. Provider confirmation, the offer and move-in wait for approval, unless the household cannot wait: then use “Placed out of hours, approval to follow” on the record.`}
+          </p>
+        </div>
+      )}
+
+      {(takenNow.length > 0 || conflict) && (
+        <div className="callout border-bad bg-bad-soft" role="alert" id="taken">
+          <div className="font-semibold text-bad">This property was taken after the search ran</div>
+          <p className="mt-1 text-sm">
+            {conflict ??
+              `${takenNow.map(c => occupancyMessage(c, s.household.caseRef)).join('; ')}. Choose another option, or run the search again to see what is free now.`}
+          </p>
+          <button type="button" className="btn mt-2" id="search-again" onClick={searchAgain}>
+            Run the search again
+          </button>
+        </div>
       )}
 
       <Section title="Your review">

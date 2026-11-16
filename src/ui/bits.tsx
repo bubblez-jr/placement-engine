@@ -150,12 +150,15 @@ export function focusField(id: string) {
  * The error summary at the top of a form. It takes focus on a failed submit,
  * and each line links to the field to fix.
  */
-export const ErrorSummary = forwardRef<HTMLDivElement, { issues: Issue[]; title?: string }>(function ErrorSummary({ issues, title }, ref) {
+export const ErrorSummary = forwardRef<HTMLDivElement, { issues: Issue[]; title?: string; id?: string }>(function ErrorSummary(
+  { issues, title, id = 'error-summary' },
+  ref,
+) {
   const errors = issues.filter(i => i.severity === 'error')
   if (errors.length === 0) return null
   return (
-    <div ref={ref} tabIndex={-1} role="alert" aria-labelledby="error-summary-title" className="callout border-bad bg-bad-soft" id="error-summary">
-      <h2 id="error-summary-title" className="flex items-center gap-2 font-semibold text-bad">
+    <div ref={ref} tabIndex={-1} role="alert" aria-labelledby={`${id}-title`} className="callout border-bad bg-bad-soft" id={id}>
+      <h2 id={`${id}-title`} className="flex items-center gap-2 font-semibold text-bad">
         <Icon name="alert" size={17} />
         {title ?? `There ${errors.length === 1 ? 'is a problem' : `are ${errors.length} problems`} to fix`}
       </h2>

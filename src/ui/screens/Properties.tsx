@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { useApp } from '../../store/app'
-import { formatDate, hoursBetween, parseDate } from '../../engine/dates'
+import { useNav } from '../../store/nav'
+import { formatDate, formatShortDate, formatUkTimeOn, hoursBetween, parseDate, ukDate } from '../../engine/dates'
+import type { OccupiedPeriod } from '../../engine/occupancy'
+import { InAppOnly, TaskList } from '../placement'
 import { requiredCompliance } from '../../engine/gates'
 import { parsePropertiesCsv, propertiesToCsv } from '../../data/csv'
 import type { Property } from '../../engine/types'
@@ -21,16 +24,43 @@ function complianceStatus(p: Property, req: string[], today: Date): { cls: strin
   return { cls: 'chip-good', text: 'All valid' }
 }
 
+function OccupancyCell({ periods }: { periods: OccupiedPeriod[] }) {
+  const { go } = useNav()
+  if (periods.length === 0) return <span className="text-sm text-muted">Free</span>
+  return (
+    <ul className="grid gap-1">
+      {periods.map(o => (
+        <li key={o.seq} className="text-sm">
+          <span className={`chip ${o.kind === 'hold' ? 'chip-accent' : 'chip-warn'}`}>
+            {o.kind === 'hold' ? 'Held' : o.kind === 'in_residence' ? 'Occupied' : 'Booked'}
+          </span>{' '}
+          <button className="link text-sm" onClick={() => go({ view: 'decision', seq: o.seq })}>
+            {o.caseRef}
+          </button>
+          <div className="text-xs whitespace-nowrap text-muted">
+            {o.kind === 'hold'
+              ? `until ${formatUkTimeOn(o.holdUntil!)}`
+              : o.to === null
+                ? `since ${formatShortDate(o.from)}, past the planned end`
+                : `${formatShortDate(o.from)} to ${formatShortDate(o.to)}`}
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 export function Properties() {
-  const { data, activeRuleset, confirmAvailability, replaceProperties } = useApp()
+  const { data, activeRuleset, confirmAvailability, replaceProperties, occupancy, tasks, now } = useApp()
+  const today = ukDate(now)
+  const supplyTasks = tasks.filter(t => t.propertyId && t.status === 'open')
   const user = useUser()
   const canConfirm = check(user, 'confirm_availability')
   const canImport = check(user, 'edit_properties')
   const [csv, setCsv] = useState('')
   const [mode, setMode] = useState<'add' | 'replace'>('add')
   const [result, setResult] = useState<{ ok: boolean; text: string[] } | null>(null)
-  const now = new Date()
-  const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()))
+  const todayDate = parseDate(today)
 
   function runImport() {
     const r = parsePropertiesCsv(csv, new Date().toISOString(), `${user.name} (import)`)
@@ -48,13 +78,13 @@ export function Properties() {
   return (
     <div className="grid gap-6">
       <PageHeader eyebrow="Supply" title="Properties">
-        What the engine can offer: the council’s own stock and approved suppliers’ units. The MVP takes a CSV; a pilot imports from the council’s booking
-        platform.
+        What the engine can offer: the council’s own stock and approved suppliers’ units. Availability is the supplier’s statement; who holds or occupies a unit
+        comes from this system’s placements. The MVP takes a CSV; a pilot imports from the council’s booking platform.
       </PageHeader>
 
       <Section title={`Inventory (${data.properties.length})`} aside={<span className="text-sm text-muted">{data.propertiesVersion}</span>}>
         <div className="scroll-x">
-          <table className="table min-w-[900px]">
+          <table className="table min-w-[1040px]">
             <thead>
               <tr>
                 <th>Property</th>
@@ -62,6 +92,7 @@ export function Properties() {
                 <th className="text-right">Beds</th>
                 <th className="text-right">£/night</th>
                 <th>Available</th>
+                <th>Held or occupied</th>
                 <th>Last confirmed</th>
                 <th>Certificates</th>
                 <th>Supplier</th>
@@ -69,9 +100,9 @@ export function Properties() {
             </thead>
             <tbody>
               {data.properties.map(p => {
-                const age = hoursBetween(p.availabilityConfirmedAt, now.toISOString())
+                const age = hoursBetween(p.availabilityConfirmedAt, now)
                 const stale = age > activeRuleset.staleAvailabilityHours
-                const cs = complianceStatus(p, requiredCompliance(p, activeRuleset), today)
+                const cs = complianceStatus(p, requiredCompliance(p, activeRuleset), todayDate)
                 const sup = data.suppliers.find(s => s.id === p.supplierId)
                 return (
                   <tr key={p.id}>
@@ -85,6 +116,9 @@ export function Properties() {
                     <td className="num whitespace-nowrap text-sm">
                       {formatDate(p.availableFrom)}
                       {p.availableUntil && <div className="text-xs text-muted">to {formatDate(p.availableUntil)}</div>}
+                    </td>
+                    <td>
+                      <OccupancyCell periods={occupancy.filter(o => o.propertyId === p.id && (o.to === null || o.to > today))} />
                     </td>
                     <td className="text-sm">
                       <span className={`chip ${stale ? 'chip-warn' : 'chip-plain'}`}>
@@ -109,6 +143,17 @@ export function Properties() {
       </Section>
 
       {!canConfirm.ok && <NotAllowed reason={canConfirm.reason} />}
+
+      <Section
+        title={`Supply and compliance tasks (${supplyTasks.length} open)`}
+        description="Certificates expiring within 60 days, and availability ending during a placement."
+        flush
+      >
+        <div className="border-b border-rule px-4 py-2.5 sm:px-5">
+          <InAppOnly />
+        </div>
+        <TaskList tasks={supplyTasks} empty="No open tasks on properties." />
+      </Section>
 
       <Section title="Import from a spreadsheet">
         {!canImport.ok && <NotAllowed reason={`${canImport.reason} Supply and compliance officers and administrators import properties.`} className="mb-3" />}

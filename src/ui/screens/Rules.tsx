@@ -6,6 +6,28 @@ import { shortHash } from '../../audit/hash'
 import { NotAllowed, PageHeader, SERIES, Section } from '../bits'
 import { useUser } from '../../auth/session'
 import { check, ROLE_LABEL } from '../../engine/permissions'
+import { bnbLimitDays, EXCEPTION_LABEL, placementPolicyOf } from '../../engine/policy'
+
+function PlacementPolicyRows({ rs }: { rs: Ruleset }) {
+  const pp = placementPolicyOf(rs)
+  const rows: [string, string][] = [
+    ['Hold before provider confirmation', `${pp.holdHours} hours (task ${pp.holdWarningHours} hours before it ends)`],
+    ['Exceptions needing a manager’s approval', pp.approvalExceptions.map(x => EXCEPTION_LABEL[x]).join('; ')],
+    ['Out-of-hours approval due', `${pp.outOfHoursApprovalBy} the next working day (Monday to Friday; bank holidays not yet included)`],
+    [
+      'Families in shared accommodation',
+      `Review every ${pp.bnbReviewEveryDays} days; team manager on day ${pp.bnbManagerDay}; urgent on day ${pp.bnbUrgentDay}; head of service on day ${bnbLimitDays(rs)}`,
+    ],
+    ['Task reminders', `Due soon ${pp.taskDueSoonHours} hours before; escalated to the manager ${pp.taskEscalateAfterDays} days overdue`],
+    ['Certificates and stays', `Certificate tasks ${pp.certificateWarningDays} days before expiry; stay-ending tasks ${pp.stayEndWarningDays} days before`],
+  ]
+  return rows.map(([k, v]) => (
+    <div key={k}>
+      <dt className="eyebrow">{k}</dt>
+      <dd className="mt-0.5">{v}</dd>
+    </div>
+  ))
+}
 
 export function Rules() {
   const { data, activeRuleset, publishRuleset } = useApp()
@@ -173,6 +195,20 @@ export function Rules() {
           </ul>
         </Section>
       </div>
+
+      <Section
+        title="Placements, approvals and tasks"
+        id="placement-policy"
+        description={
+          activeRuleset.placement
+            ? 'Part of this signed version. Changing them is a code change to the policy file in this demo; the pilot adds them to this screen.'
+            : 'This version was published before these settings existed, so the defaults below apply. The published version itself is not changed.'
+        }
+      >
+        <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+          <PlacementPolicyRows rs={activeRuleset} />
+        </dl>
+      </Section>
 
       <Section title="Publish a new version">
         {allowed.ok ? (

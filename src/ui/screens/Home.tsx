@@ -1,11 +1,16 @@
 import { useApp } from '../../store/app'
 import { useNav } from '../../store/nav'
 import { SCENARIOS } from '../../data/households'
-import { daysBetween, formatDate, formatDateTime, parseDate, toIsoDate } from '../../engine/dates'
+import { formatDateTime, parseDate, ukDate } from '../../engine/dates'
 import { requiredCompliance } from '../../engine/gates'
-import { clocksNow, decisionRecords, deciderOf } from '../../audit/records'
+import { check } from '../../engine/permissions'
+import { isMine } from '../../engine/tasks'
+import { decisionRecords, deciderOf } from '../../audit/records'
+import { useUser } from '../../auth/session'
 import { PageHeader, Section } from '../bits'
 import { Icon } from '../icons'
+import { ApprovalChip, StateChip, TaskList } from '../placement'
+import { useApprovalQueue } from './Approvals'
 
 const OUTCOME = {
   accepted: <span className="chip chip-good">Accepted</span>,
@@ -24,21 +29,24 @@ function Composition({ adults, children }: { adults: number; children: number })
 }
 
 export function Home() {
-  const { data, activeRuleset } = useApp()
+  const { data, activeRuleset, now, tasks, placements, occupancy } = useApp()
   const { go } = useNav()
-  const today = toIsoDate(new Date())
+  const user = useUser()
+  const today = ukDate(now)
   const todayDate = parseDate(today)
   const decisions = decisionRecords(data.chain)
   const decidedSearchIds = new Set(decisions.map(r => r.snapshot.search.id))
   const pending = data.searches.filter(s => !decidedSearchIds.has(s.id)).slice(0, 5)
-  const clocks = decisions
-    .flatMap(r => clocksNow(data.chain, r).map(c => ({ c, r })))
-    .filter(x => x.c.status === 'open' && x.c.key !== 's202')
-    .sort((a, b) => a.c.due.localeCompare(b.c.due))
+  const mine = tasks.filter(t => t.status === 'open' && isMine(t, user))
+  const late = mine.filter(t => t.escalation === 'overdue' || t.escalation === 'escalated').length
+  const canApprove = check(user, 'approve_exception').ok
+  const waiting = useApprovalQueue().filter(x => x.a.status === 'awaiting' || x.a.status === 'out_of_hours')
+  const occupiedToday = new Set(occupancy.filter(o => o.from <= today && (o.to === null || o.to > today)).map(o => o.propertyId))
   const decided = decisions.length
   const accepted = decisions.filter(r => r.snapshot.decision.outcome === 'accepted').length
   const bookable = data.properties.filter(p => {
     if (parseDate(p.availableFrom) > todayDate) return false
+    if (occupiedToday.has(p.id)) return false
     const sup = data.suppliers.find(s => s.id === p.supplierId)
     if (!sup?.approved) return false
     return requiredCompliance(p, activeRuleset).every(t => {
@@ -48,14 +56,14 @@ export function Home() {
   }).length
 
   const stats = [
-    { label: 'Available and compliant today', value: `${bookable}`, sub: `of ${data.properties.length} properties held` },
+    { label: 'Free and compliant today', value: `${bookable}`, sub: `of ${data.properties.length} properties; ${occupiedToday.size} held or occupied` },
     {
       label: 'Decisions recorded',
       value: `${decided}`,
-      sub: decided ? `${decisions.filter(r => r.snapshot.decision.outcome === 'override').length} overrides` : 'none yet',
+      sub: decided ? (n => `${n} override${n === 1 ? '' : 's'}`)(decisions.filter(r => r.snapshot.decision.outcome === 'override').length) : 'none yet',
     },
     { label: 'Recommendation accepted', value: decided ? `${Math.round((accepted / decided) * 100)}%` : '—', sub: 'healthy range 30–90%' },
-    { label: 'Open deadlines', value: `${clocks.length}`, sub: clocks[0] ? `next ${formatDate(clocks[0].c.due)}` : 'nothing due' },
+    { label: 'My open tasks', value: `${mine.length}`, sub: late ? `${late} overdue or escalated` : 'nothing overdue' },
   ]
 
   return (
@@ -118,37 +126,57 @@ export function Home() {
         </Section>
 
         <div className="grid content-start gap-6">
-          <Section title="Upcoming deadlines" aside={clocks.length > 0 && <span className="num">{clocks.length} open</span>} flush>
-            {clocks.length === 0 ? (
-              <p className="px-4 py-4 text-sm text-muted sm:px-5">
-                Deadlines appear here once a decision is recorded: notices to other councils, the six-week limit for families, school and GP notifications.
-              </p>
-            ) : (
-              <ul className="divide-y divide-[var(--rule)]">
-                {clocks.slice(0, 6).map(({ c, r }) => {
-                  const days = daysBetween(today, c.due)
-                  return (
-                    <li key={`${r.seq}-${c.key}`} className="flex items-start gap-3 px-4 py-3 sm:px-5">
-                      <span
-                        className="num mt-0.5 flex w-12 shrink-0 flex-col items-center rounded-md border border-rule py-1 text-center leading-tight"
-                        style={days <= 3 ? { borderColor: days < 0 ? 'var(--bad)' : 'var(--warn)' } : undefined}
+          {canApprove && (
+            <Section
+              title="Waiting for your approval"
+              aside={
+                <button className="link text-sm" onClick={() => go({ view: 'approvals' })}>
+                  Open approvals
+                </button>
+              }
+              flush
+            >
+              {waiting.length === 0 ? (
+                <p className="px-4 py-4 text-sm text-muted sm:px-5">Nothing is waiting for approval.</p>
+              ) : (
+                <ul className="divide-y divide-[var(--rule)]">
+                  {waiting.slice(0, 4).map(({ r, a }) => (
+                    <li key={r.seq}>
+                      <button
+                        className="flex w-full flex-wrap items-center gap-2 px-4 py-3 text-left hover:bg-[var(--hover)] sm:px-5"
+                        onClick={() => go({ view: 'decision', seq: r.seq })}
                       >
-                        <span className="text-[0.95rem] font-semibold">{parseDate(c.due).getUTCDate()}</span>
-                        <span className="text-[0.65rem] tracking-wide text-faint uppercase">{formatDate(c.due).split(' ')[1]}</span>
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-medium">{c.label}</span>
-                        <span className="text-xs text-muted">
-                          <button className="link text-xs" onClick={() => go({ view: 'decision', seq: r.seq })}>
-                            {r.snapshot.search.household.caseRef}
-                          </button>{' '}
-                          · {days < 0 ? `${-days} days overdue` : days === 0 ? 'due today' : `in ${days} days`}
+                        <span className="text-sm font-semibold">{r.snapshot.search.household.caseRef}</span>
+                        <ApprovalChip a={a} />
+                        <span className="w-full text-xs text-muted">
+                          {deciderOf(r.snapshot).name}, {formatDateTime(r.snapshot.decision.decidedAt)}
                         </span>
-                      </span>
+                      </button>
                     </li>
-                  )
-                })}
-              </ul>
+                  ))}
+                </ul>
+              )}
+            </Section>
+          )}
+
+          <Section
+            title="My tasks"
+            aside={
+              <button className="link text-sm" onClick={() => go({ view: 'tasks' })}>
+                All tasks
+              </button>
+            }
+            flush
+          >
+            <TaskList tasks={mine.slice(0, 5)} empty="Nothing for you right now. Tasks appear here when a placement needs action." />
+            {mine.length > 5 && (
+              <p className="border-t border-rule px-4 py-2 text-sm text-muted sm:px-5">
+                {mine.length - 5} more on the{' '}
+                <button className="link text-sm" onClick={() => go({ view: 'tasks' })}>
+                  Tasks
+                </button>{' '}
+                screen.
+              </p>
             )}
           </Section>
 
@@ -197,13 +225,14 @@ export function Home() {
           <p className="px-4 py-4 text-sm text-muted sm:px-5">No decisions recorded yet. Try an example household above.</p>
         ) : (
           <div className="scroll-x">
-            <table className="table min-w-[680px]">
+            <table className="table min-w-[760px]">
               <thead>
                 <tr>
                   <th className="pl-5">Record</th>
                   <th>Case</th>
                   <th>Placement</th>
                   <th>Outcome</th>
+                  <th>Status</th>
                   <th>Officer</th>
                   <th>Decided</th>
                 </tr>
@@ -215,12 +244,19 @@ export function Home() {
                   .map(r => {
                     const d = r.snapshot.decision
                     const chosen = r.snapshot.search.candidates.find(c => c.propertyId === d.chosenPropertyId)
+                    const p = placements.find(x => x.seq === r.seq)
                     return (
                       <tr key={r.seq} className="cursor-pointer" onClick={() => go({ view: 'decision', seq: r.seq })}>
                         <td className="num pl-5 font-semibold text-accent">#{r.seq}</td>
                         <td>{r.snapshot.search.household.caseRef}</td>
                         <td>{chosen?.label ?? '—'}</td>
                         <td>{OUTCOME[d.outcome]}</td>
+                        <td>
+                          <span className="flex flex-wrap gap-1">
+                            {p && <StateChip state={p.state} />}
+                            {p && p.approval.status !== 'not_required' && p.approval.status !== 'approved' && <ApprovalChip a={p.approval} />}
+                          </span>
+                        </td>
                         <td>{deciderOf(r.snapshot).name}</td>
                         <td className="num whitespace-nowrap text-muted">{formatDateTime(d.decidedAt)}</td>
                       </tr>

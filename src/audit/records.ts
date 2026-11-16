@@ -9,10 +9,19 @@ import {
   type TaskOwner,
 } from '../engine/types'
 import { ROLE_LABEL } from '../engine/permissions'
-import { CONSENT_METHOD_LABEL, CONSENT_STATUS_LABEL, sixWeekRuleApplies } from '../engine/decision'
+import { CONSENT_METHOD_LABEL, CONSENT_STATUS_LABEL, EMERGENCY_REASON_LABEL, MOVE_ON_ROUTE_LABEL, sixWeekRuleApplies } from '../engine/decision'
 import { addDays, addHours, formatDate, formatUkTimeOn } from '../engine/dates'
 import { bnbLimitDays, EXCEPTION_LABEL, placementPolicyOf } from '../engine/policy'
-import { DESTINATION_LABEL, foldApproval, foldPlacement, OFFER_METHOD_LABEL, type ApprovalView, type Placement, type PlacementBase } from '../engine/placement'
+import {
+  DESTINATION_LABEL,
+  foldApproval,
+  foldPlacement,
+  OFFER_METHOD_LABEL,
+  STATE_LABEL,
+  type ApprovalView,
+  type Placement,
+  type PlacementBase,
+} from '../engine/placement'
 import { deriveTasks, ownerLabel, type CaseFacts, type Task } from '../engine/tasks'
 import type { ChainRecord, DecisionRecord } from './chain'
 import { isDecisionSnapshot, isPlacementEvent, type DecisionSnapshot, type PlacementEvent } from './snapshot'
@@ -293,7 +302,7 @@ export function describeEvent(e: PlacementEvent): string {
     case 'stay_extended':
       return `Planned end changed from ${formatDate(b.previousEnd)} to ${formatDate(b.newEnd)}: ${b.reason}`
     case 'approval':
-      return `Exception ${b.outcome} (${b.exceptions.map(x => EXCEPTION_LABEL[x].toLowerCase()).join('; ')}): “${b.reason}”`
+      return `${b.outcome === 'approved' ? 'Approved' : 'Rejected'} by a manager. Exceptions: ${b.exceptions.map(x => EXCEPTION_LABEL[x]).join('; ')}. Reasons: “${b.reason}”`
     case 'approval_deferred':
       return `Placed out of hours, approval to follow: “${b.reason}”. A manager’s approval is due by ${formatUkTimeOn(b.approveBy)}.${b.duringWorkingHours ? ' This route was used during working hours.' : ''}`
     case 'task_completed':
@@ -304,4 +313,80 @@ export function describeEvent(e: PlacementEvent): string {
       return `Task cancelled: ${b.title}. Reason: “${b.reason}”`
   }
   return ''
+}
+
+/** The sealed terms of a decision as label/value rows, for the audit pack and the PDF. */
+export function termsRows(r: DecisionRecord): [string, string][] {
+  const s = r.snapshot
+  const terms = s.schema === 'placement-decision/2' ? s.terms : undefined
+  if (!terms)
+    return s.decision.chosenPropertyId
+      ? [
+          [
+            'Hold and approval',
+            'Recorded before placements were tracked: no hold or exceptions were sealed. The hold is read from the decision time under the default policy.',
+          ],
+        ]
+      : []
+  const rows: [string, string][] = [
+    ['Exceptions', terms.exceptions.length ? `${terms.exceptions.map(x => EXCEPTION_LABEL[x]).join('; ')}. Needs a manager’s approval.` : 'None'],
+  ]
+  const p = terms.placement
+  if (p) {
+    rows.push(['Hold', `Until ${formatUkTimeOn(p.holdUntil)} (${p.holdHours} hours), unless the provider confirms`])
+    rows.push(['Planned stay', `${formatDate(s.decision.startDate)} to ${formatDate(p.plannedEnd)}`])
+    if (p.emergency) rows.push(['Emergency reason', `${EMERGENCY_REASON_LABEL[p.emergency.reasonCode]}. “${p.emergency.reasonText}”`])
+    if (p.moveOnPlan)
+      rows.push([
+        'Move-on plan',
+        `Move by ${formatDate(p.moveOnPlan.targetDate)} to ${MOVE_ON_ROUTE_LABEL[p.moveOnPlan.route].toLowerCase()}${p.moveOnPlan.routeNote ? ` (${p.moveOnPlan.routeNote})` : ''}. Owner: ${p.moveOnPlan.owner.name}. Six-week limit: ${formatDate(addDays(s.decision.startDate, p.limitDays))}.`,
+      ])
+  }
+  return rows
+}
+
+export interface StoryEntry {
+  seq: number
+  at: IsoDateTime
+  who: string
+  text: string
+  rowHash: string
+}
+
+/** The whole story of a decision in chain order: the decision, then every sealed record about it. */
+export function storyOf(chain: ChainRecord[], r: DecisionRecord): StoryEntry[] {
+  const d = r.snapshot.decision
+  const by = deciderOf(r.snapshot)
+  const first: StoryEntry = {
+    seq: r.seq,
+    at: d.decidedAt,
+    who: `${by.name} (${by.roleLabel.toLowerCase()})`,
+    text: d.chosenPropertyId ? 'Decision recorded; the property is held.' : 'Decision recorded: no suitable option.',
+    rowHash: r.rowHash,
+  }
+  return [
+    first,
+    ...eventsAbout(chain, r.seq).map(e => ({
+      seq: e.seq,
+      at: e.snapshot.at,
+      who: `${e.snapshot.actor.name} (${e.snapshot.actor.roleLabel.toLowerCase()})`,
+      text: describeEvent(e.snapshot),
+      rowHash: e.rowHash,
+    })),
+  ]
+}
+
+/** One line for where things stand at `now`, labelled as such: never sealed. */
+export function statusLine(chain: ChainRecord[], r: DecisionRecord, now: IsoDateTime): string {
+  const p = placementOf(chain, r, now)
+  const a = approvalOf(chain, r)
+  const approval =
+    a.status === 'not_required'
+      ? ''
+      : a.status === 'awaiting'
+        ? ' Awaiting approval.'
+        : a.status === 'out_of_hours'
+          ? ' Placed out of hours, approval to follow.'
+          : ` Exception ${a.status}.`
+  return `${p ? `Placement: ${STATE_LABEL[p.state].toLowerCase()}.` : 'No placement.'}${approval}`
 }

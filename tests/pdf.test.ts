@@ -15,7 +15,7 @@ describe('audit pack PDF', () => {
   it('renders a schema-1 record, and a V2 record with a later consent event', async () => {
     let d = migrate(structuredClone(schema1), NOW)!
     const old = decisionRecords(d.chain)[1]
-    const a = await renderAuditPdf(old, d.chain)
+    const a = await renderAuditPdf(old, d.chain, NOW)
     expect(a.size).toBeGreaterThan(5000)
 
     const s = d.searches.find(x => x.id === 'S-FIX-DIALYSIS')!
@@ -29,13 +29,13 @@ describe('audit pack PDF', () => {
       )
     ).data
     d = (await cmdUpdateConsent(d, ctx, 2, { status: 'refused', givenBy: 'Adult 1', method: 'written' })).data
-    const b = await renderAuditPdf(decisionRecords(d.chain)[1], d.chain)
+    const b = await renderAuditPdf(decisionRecords(d.chain)[1], d.chain, NOW)
     expect(b.size).toBeGreaterThan(5000)
-    const c = await renderAuditPdf(decisionRecords(d.chain)[2], d.chain)
+    const c = await renderAuditPdf(decisionRecords(d.chain)[2], d.chain, NOW)
     expect(c.size).toBeGreaterThan(5000)
   }, 30_000)
   it('renders a phase 1 record (no placement terms) with its later consent event', async () => {
     const d = migrate(structuredClone(schema2), NOW)!
-    for (const r of decisionRecords(d.chain)) expect((await renderAuditPdf(r, d.chain)).size).toBeGreaterThan(5000)
+    for (const r of decisionRecords(d.chain)) expect((await renderAuditPdf(r, d.chain, NOW)).size).toBeGreaterThan(5000)
   }, 30_000)
 })

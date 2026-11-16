@@ -8,7 +8,7 @@ import { Field, FieldError, fieldA11y } from './bits'
 const STATUS_HELP: Record<ConsentStatus, string> = {
   given: 'A parent agreed. The notice is drafted for you to send.',
   refused: 'A parent said no. No notice is drafted, and the record says so.',
-  not_asked: `You could not ask yet. Say why: a follow-up is due within ${CONSENT_FOLLOW_UP_DAYS} days.`,
+  not_asked: `You could not ask yet. Say why: you get a task to ask within ${CONSENT_FOLLOW_UP_DAYS} days.`,
 }
 
 /** Consent questions with no answer filled in. Field ids match the engine's issue paths. */

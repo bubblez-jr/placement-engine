@@ -21,6 +21,8 @@ type IconName =
   | 'file'
   | 'scale'
   | 'lock'
+  | 'tasks'
+  | 'stamp'
 
 const PATHS: Record<IconName, string> = {
   home: 'M3 10.5 12 3l9 7.5M5.5 9v11.5h13V9',
@@ -41,6 +43,8 @@ const PATHS: Record<IconName, string> = {
   file: 'M6 3h8.5L19 7.5V21H6zM14 3v5h5M9 12.5h7M9 16h7',
   scale: 'M12 4v16M7 20h10M5 7h14M5 7l-2.5 6a3 3 0 0 0 5 0zM19 7l-2.5 6a3 3 0 0 0 5 0z',
   lock: 'M6.5 10.5h11V20h-11zM8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5',
+  tasks: 'M9 3.5h6v3H9zM7 5H5.5v16h13V5H17M8.5 13.5l2.5 2.5 4.5-5',
+  stamp: 'M12 3a3.5 3.5 0 0 0-2 6.4V12H6.5A1.5 1.5 0 0 0 5 13.5V16h14v-2.5a1.5 1.5 0 0 0-1.5-1.5H14V9.4A3.5 3.5 0 0 0 12 3zM5 19.5h14',
 }
 
 export function Icon({ name, size = 18, ...rest }: { name: IconName; size?: number } & SVGProps<SVGSVGElement>) {

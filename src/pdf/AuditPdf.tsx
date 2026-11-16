@@ -1,6 +1,6 @@
 import { Document, Page, pdf, StyleSheet, Text, View } from '@react-pdf/renderer'
 import type { ChainRecord, DecisionRecord } from '../audit/chain'
-import { clocksNow, consentAtDecision, consentSummary, currentConsent, deciderOf, eventsAbout, recordKind } from '../audit/records'
+import { clocksNow, consentAtDecision, consentSummary, currentConsent, deciderOf, statusLine, storyOf, termsRows } from '../audit/records'
 import { ACCESS_QUESTIONS, effectiveAccessNeeds, needSentence, subjectLabel } from '../engine/access'
 import { formatDate, formatDateTime } from '../engine/dates'
 import { TIER_LABEL } from '../engine/scoring'
@@ -34,12 +34,12 @@ function KV({ k, v }: { k: string; v: string }) {
   )
 }
 
-function AuditDoc({ r, chain }: { r: DecisionRecord; chain: ChainRecord[] }) {
+function AuditDoc({ r, chain, now }: { r: DecisionRecord; chain: ChainRecord[]; now: string }) {
   const { search: s, decision: d, ruleset: rs, properties } = r.snapshot
   const clocks = clocksNow(chain, r)
   const by = deciderOf(r.snapshot)
   const consent = currentConsent(chain, r)
-  const later = eventsAbout(chain, r.seq)
+  const story = storyOf(chain, r)
   const h = s.household
   const needs = effectiveAccessNeeds(h)
   const eligible = s.candidates.filter(c => c.eligible).sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
@@ -78,6 +78,9 @@ function AuditDoc({ r, chain }: { r: DecisionRecord; chain: ChainRecord[] }) {
         )}
         {d.outcome === 'override' && <KV k="Recommended instead" v={rec?.label ?? ''} />}
         {d.reasonText ? <KV k={d.outcome === 'no_suitable' ? 'Search steps' : 'Officer’s words'} v={`“${d.reasonText}”`} /> : null}
+        {termsRows(r).map(([k, v]) => (
+          <KV key={k} k={k} v={v} />
+        ))}
         <KV
           k="Review before deciding"
           v={`Options opened ${formatDateTime(d.reviewed.resultsOpenedAt)}; details opened: ${d.reviewed.propertiesOpened.length ? d.reviewed.propertiesOpened.join(', ') : 'none'}; comparison ${d.reviewed.comparisonOpened ? 'opened' : 'not opened'}; confirmed full list reviewed: ${d.reviewed.confirmedFullListReviewed ? 'yes' : 'no'}`}
@@ -199,20 +202,17 @@ function AuditDoc({ r, chain }: { r: DecisionRecord; chain: ChainRecord[] }) {
           </>
         )}
 
-        {later.length > 0 && (
-          <>
-            <Text style={st.h2}>9. Later records about this decision</Text>
-            {later.map(e => (
-              <KV
-                key={e.seq}
-                k={`#${e.seq} ${formatDateTime(e.snapshot.at)}`}
-                v={`${e.snapshot.actor.name}: ${e.snapshot.event.type === 'consent_updated' ? consentSummary({ kind: 'record', consent: e.snapshot.event.consent }) : recordKind(e)}. Hash ${e.rowHash}`}
-              />
-            ))}
-          </>
-        )}
+        <Text style={st.h2}>9. What happened next</Text>
+        <Text style={st.small}>The decision, then every later record about it, in the order sealed. Each is its own record; the decision is never edited.</Text>
+        {story.map(e => (
+          <KV key={e.seq} k={`#${e.seq} ${formatDateTime(e.at)}`} v={`${e.who}: ${e.text} Hash ${e.rowHash}`} />
+        ))}
+        <Text style={st.banner}>
+          Status when this PDF was produced ({formatDateTime(now)}): {statusLine(chain, r, now)} Worked out from the records above; not part of any sealed
+          record.
+        </Text>
 
-        <Text style={st.h2}>{later.length > 0 ? 10 : 9}. Method and seal</Text>
+        <Text style={st.h2}>10. Method and seal</Text>
         <Text>
           {s.travelProvider.label}. {s.travelProvider.assumptions}. {s.travelProvider.disclaimer}
         </Text>
@@ -231,6 +231,7 @@ function AuditDoc({ r, chain }: { r: DecisionRecord; chain: ChainRecord[] }) {
   )
 }
 
-export async function renderAuditPdf(r: DecisionRecord, chain: ChainRecord[]): Promise<Blob> {
-  return pdf(<AuditDoc r={r} chain={chain} />).toBlob()
+/** `now` is when the PDF is produced: it only labels the status line, never a sealed fact. */
+export async function renderAuditPdf(r: DecisionRecord, chain: ChainRecord[], now: string): Promise<Blob> {
+  return pdf(<AuditDoc r={r} chain={chain} now={now} />).toBlob()
 }

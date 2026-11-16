@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { verifyChain } from '../src/audit/chain'
-import { approvalOf, decisionRecords, isSeeded, placementsFrom, tasksFrom } from '../src/audit/records'
+import { approvalOf, decisionRecords, isSeeded, placementsFrom, statusLine, storyOf, tasksFrom, termsRows } from '../src/audit/records'
+import { renderAuditPdf } from '../src/pdf/AuditPdf'
 import { SCENARIOS } from '../src/data/households'
 import { STAFF } from '../src/data/staff'
 import { sharedStayDay } from '../src/engine/placement'
@@ -57,4 +58,23 @@ describe('seeded demo history', async () => {
     expect(open.some(t => t.kind === 'certificate' && t.escalation !== 'none')).toBe(true)
     expect(tasks.find(t => t.kind === 's208')).toMatchObject({ status: 'done', completion: { reference: 'EMAIL-S208-0350' } })
   })
+  it('the audit pack tells the B&B story in order, and the PDF renders it', async () => {
+    const r = decisionRecords(d.chain).find(x => x.snapshot.search.household.caseRef === 'HN-26-0412')!
+    const story = storyOf(d.chain, r).map(e => e.text.split(/[.:]/)[0])
+    expect(story).toEqual([
+      'Decision recorded; the property is held',
+      'Placed out of hours, approval to follow',
+      'Provider confirmed the booking',
+      'Offered to the household (in person)',
+      'The household accepted the offer',
+      'The household moved in on 18 Oct 2026',
+      'Approved by a manager',
+      'Task done',
+      'Task done',
+      'Task done',
+    ])
+    expect(termsRows(r).map(([k]) => k)).toEqual(['Exceptions', 'Hold', 'Planned stay', 'Emergency reason', 'Move-on plan'])
+    expect(statusLine(d.chain, r, NOW)).toBe('Placement: moved in. Exception approved.')
+    expect((await renderAuditPdf(r, d.chain, NOW)).size).toBeGreaterThan(5000)
+  }, 30_000)
 })

@@ -15,8 +15,10 @@ export type Route =
   | { view: 'audit' }
   | { view: 'rules' }
   | { view: 'properties' }
+  | { view: 'tasks' }
+  | { view: 'approvals' }
 
-const TOP: Route['view'][] = ['home', 'new', 'audit', 'rules', 'properties']
+const TOP: Route['view'][] = ['home', 'new', 'tasks', 'approvals', 'audit', 'rules', 'properties']
 
 function fromHash(): Route {
   const h = window.location.hash.replace(/^#/, '')

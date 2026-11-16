@@ -1,5 +1,6 @@
 import { SessionProvider, useSession, useUser } from './auth/session'
-import { ROLE_LABEL } from './engine/permissions'
+import { check, ROLE_LABEL } from './engine/permissions'
+import { isMine } from './engine/tasks'
 import { SignIn } from './ui/screens/SignIn'
 import { AppProvider, useApp } from './store/app'
 import { NavProvider, useNav, type Route } from './store/nav'
@@ -15,10 +16,14 @@ import { AuditReport } from './ui/screens/AuditReport'
 import { AuditLog } from './ui/screens/AuditLog'
 import { Rules } from './ui/screens/Rules'
 import { Properties } from './ui/screens/Properties'
+import { Tasks } from './ui/screens/Tasks'
+import { Approvals, useApprovalQueue } from './ui/screens/Approvals'
 
 const NAV: { view: Route['view']; label: string; icon: Parameters<typeof Icon>[0]['name']; match: Route['view'][] }[] = [
   { view: 'home', label: 'Overview', icon: 'home', match: ['home', 'decision', 'report'] },
   { view: 'new', label: 'New placement', icon: 'plus', match: ['new', 'results', 'property', 'compare', 'decide'] },
+  { view: 'tasks', label: 'Tasks', icon: 'tasks', match: ['tasks'] },
+  { view: 'approvals', label: 'Approvals', icon: 'stamp', match: ['approvals'] },
   { view: 'properties', label: 'Properties', icon: 'building', match: ['properties'] },
   { view: 'rules', label: 'Placement policy', icon: 'sliders', match: ['rules'] },
   { view: 'audit', label: 'Audit log', icon: 'shield', match: ['audit'] },
@@ -92,22 +97,49 @@ function UserBadge({ compact = false }: { compact?: boolean }) {
   )
 }
 
+/** A count beside a menu item. Red when something is overdue; the number is also in the accessible name. */
+function Count({ n, alert }: { n: number; alert?: boolean }) {
+  if (n === 0) return null
+  return (
+    <span
+      className="num ml-auto min-w-[1.4rem] rounded-full px-1.5 text-center text-[0.72rem] leading-[1.35rem] font-semibold"
+      style={alert ? { background: 'var(--bad)', color: 'var(--surface)' } : { background: 'var(--rail-active)', color: 'var(--rail-ink)' }}
+      aria-hidden="true"
+    >
+      {n}
+    </span>
+  )
+}
+
 function Shell() {
   const { route, go } = useNav()
-  const { activeRuleset } = useApp()
+  const { activeRuleset, tasks } = useApp()
+  const user = useUser()
+  const approvals = useApprovalQueue().filter(x => x.a.status === 'awaiting' || x.a.status === 'out_of_hours')
+  const mine = tasks.filter(t => t.status === 'open' && isMine(t, user))
+  const late = mine.filter(t => t.escalation === 'overdue' || t.escalation === 'escalated').length
+  const canApprove = check(user, 'approve_exception').ok
+  const counts: Partial<Record<Route['view'], { n: number; alert: boolean; label: string }>> = {
+    tasks: { n: mine.length, alert: late > 0, label: `${mine.length} open${late ? `, ${late} overdue` : ''}` },
+    approvals: { n: approvals.length, alert: approvals.some(x => x.a.status === 'out_of_hours'), label: `${approvals.length} waiting` },
+  }
   const nav = (
     <ul className="flex gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
-      {NAV.map(n => {
+      {NAV.filter(n => n.view !== 'approvals' || canApprove).map(n => {
         const active = n.match.includes(route.view)
+        const c = counts[n.view]
         return (
           <li key={n.view} className="shrink-0">
             <button
+              id={`nav-${n.view}`}
               onClick={() => go({ view: n.view } as Route)}
               aria-current={active ? 'page' : undefined}
+              aria-label={c && c.n > 0 ? `${n.label}, ${c.label}` : undefined}
               className="rail-link flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[0.9rem] font-medium transition-colors"
             >
               <Icon name={n.icon} size={17} />
               {n.label}
+              {c && <Count n={c.n} alert={c.alert} />}
             </button>
           </li>
         )
@@ -194,6 +226,10 @@ function Screen({ route }: { route: Route }) {
       return <Rules />
     case 'properties':
       return <Properties />
+    case 'tasks':
+      return <Tasks />
+    case 'approvals':
+      return <Approvals />
   }
 }
 

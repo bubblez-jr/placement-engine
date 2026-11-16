@@ -2,15 +2,40 @@ import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../../store/app'
 import { useNav } from '../../store/nav'
 import { useUser } from '../../auth/session'
-import { daysBetween, formatDate, formatDateTime, toIsoDate } from '../../engine/dates'
+import { daysBetween, formatDate, formatDateTime, formatUkTimeOn, ukDate } from '../../engine/dates'
 import { hasChildren, validateConsent, type ConsentInput } from '../../engine/decision'
 import { check } from '../../engine/permissions'
 import { ValidationError } from '../../engine/validate'
 import type { Issue } from '../../engine/types'
 import { shortHash } from '../../audit/hash'
-import { clocksNow, consentAtDecision as consentAtDecisionOf, currentConsent, decisionRecords, deciderOf, type ConsentView } from '../../audit/records'
+import {
+  approvalOf,
+  clocksNow,
+  consentAtDecision as consentAtDecisionOf,
+  currentConsent,
+  decisionRecords,
+  deciderOf,
+  eventsAbout,
+  isSeeded,
+  type ConsentView,
+} from '../../audit/records'
+import {
+  ApprovalChip,
+  ApprovalPanel,
+  ExtendStay,
+  holdText,
+  MoveOnPlanView,
+  OutOfHours,
+  PlacementActions,
+  PlacementHistory,
+  SharedStayCounter,
+  StateChip,
+  Stepper,
+  TaskList,
+} from '../placement'
 import { OVERRIDE_REASONS } from './Decide'
 import { ErrorSummary, NotAllowed, PageHeader, Section } from '../bits'
+import { Icon } from '../icons'
 import { ConsentFields, ConsentText } from '../consent'
 
 function CopyBox({ id, text }: { id: string; text: string }) {
@@ -128,10 +153,14 @@ function UpdateConsent({ seq, household }: { seq: number; household: Parameters<
 }
 
 export function DecisionRecord({ seq }: { seq: number }) {
-  const { data } = useApp()
+  const { data, now, placements, tasks } = useApp()
   const { go } = useNav()
   const r = decisionRecords(data.chain).find(x => x.seq === seq)
   if (!r) return <p>Decision #{seq} not found.</p>
+  const placement = placements.find(x => x.seq === seq) ?? null
+  const approval = placement?.approval ?? approvalOf(data.chain, r)
+  const myTasks = tasks.filter(t => t.seq === seq)
+  const later = eventsAbout(data.chain, seq)
   const { search, decision: d, ruleset, properties } = r.snapshot
   const clocks = clocksNow(data.chain, r)
   const by = deciderOf(r.snapshot)
@@ -140,7 +169,7 @@ export function DecisionRecord({ seq }: { seq: number }) {
   const chosen = search.candidates.find(c => c.propertyId === d.chosenPropertyId)
   const prop = properties.find(p => p.id === d.chosenPropertyId)
   const rec = search.candidates.find(c => c.propertyId === search.recommendedId)
-  const today = toIsoDate(new Date())
+  const today = ukDate(now)
   const adults = search.household.members.filter(m => m.role === 'adult')
   const children = search.household.members.filter(m => m.role === 'child')
 
@@ -178,7 +207,7 @@ Contact: ${by.name}, ${ruleset.councilName}`
     <div className="grid gap-6">
       <PageHeader
         eyebrow={`Decision record #${r.seq} · sealed ${formatDateTime(r.snapshot.frozenAt)}`}
-        title={chosen ? `Placement recorded: ${chosen.label}` : 'No suitable option recorded'}
+        title={chosen ? `Placement: ${chosen.label}` : 'No suitable option recorded'}
         actions={
           <>
             <button className="btn btn-primary" onClick={() => go({ view: 'report', seq })}>
@@ -190,9 +219,96 @@ Contact: ${by.name}, ${ruleset.councilName}`
           </>
         }
       >
-        Case {search.household.caseRef}
-        {prop ? ` · ${prop.address}` : ''}
+        <span className="flex flex-wrap items-center gap-2">
+          <span>
+            Case {search.household.caseRef}
+            {prop ? ` · ${prop.address}` : ''}
+          </span>
+          {placement && <StateChip state={placement.state} />}
+          <ApprovalChip a={approval} />
+          {isSeeded(r) && <span className="chip chip-outline">Seeded demo history</span>}
+        </span>
       </PageHeader>
+
+      {approval.status === 'out_of_hours' && (
+        <div className="callout border-bad bg-bad-soft" role="status" id="ooh-banner">
+          <div className="flex items-center gap-2 font-semibold text-bad">
+            <Icon name="alert" size={17} />
+            Placed out of hours, approval to follow
+          </div>
+          <p className="mt-1 text-sm">
+            {approval.deferral.actor.name} went ahead without a manager’s approval at {formatDateTime(approval.deferral.at)}: “{approval.deferral.reason}”. A
+            manager must approve or reject by {formatUkTimeOn(approval.deferral.approveBy)}.
+            {approval.deferral.duringWorkingHours && <b> This route was used during working hours.</b>}
+          </p>
+        </div>
+      )}
+      {approval.status !== 'out_of_hours' && approval.status !== 'not_required' && 'deferral' in approval && approval.deferral && (
+        <p className="callout text-sm">
+          Placed out of hours, approval to follow ({approval.deferral.actor.name}, {formatDateTime(approval.deferral.at)}: “{approval.deferral.reason}”). Then{' '}
+          {approval.status} by {approval.decision.actor.name}, {formatDateTime(approval.decision.at)}.
+        </p>
+      )}
+
+      {placement && (
+        <Section
+          title="Placement"
+          id="placement"
+          aside={
+            <span className="num text-sm">
+              {placement.state === 'held' ? holdText(placement, now) : `Planned ${formatDate(placement.startDate)} to ${formatDate(placement.currentEnd)}`}
+            </span>
+          }
+        >
+          <div className="grid gap-4">
+            {placement.legacy && (
+              <p className="callout text-sm">
+                Recorded before placements were tracked. Its hold is read from the decision time under the default policy (
+                {Math.round((new Date(placement.holdUntil).getTime() - new Date(placement.decidedAt).getTime()) / 3_600_000)} hours), with no exceptions
+                recorded. The sealed record is unchanged.
+              </p>
+            )}
+            <Stepper p={placement} />
+            <div className="grid gap-2">
+              <h3 className="text-sm font-semibold">Next step</h3>
+              <PlacementActions p={placement} />
+            </div>
+            <OutOfHours p={placement} />
+            {placement.extensions.length > 0 && (
+              <p className="text-sm text-muted">
+                Planned end changed {placement.extensions.length} time{placement.extensions.length === 1 ? '' : 's'}; first planned for{' '}
+                {formatDate(placement.plannedEnd)}.
+              </p>
+            )}
+            <div>
+              <ExtendStay p={placement} />
+            </div>
+          </div>
+        </Section>
+      )}
+
+      {approval.status !== 'not_required' && (
+        <Section
+          title="Manager approval"
+          id="approval"
+          description="This decision raised exceptions that a manager or the head of service must approve. The deciding officer cannot approve it."
+        >
+          <ApprovalPanel rec={r} approval={approval} />
+        </Section>
+      )}
+
+      {placement?.sixWeekRule && (
+        <Section title="Family in shared accommodation" id="shared" description="Families may stay in B&B or shared accommodation for no more than six weeks.">
+          <div className="grid gap-4">
+            <SharedStayCounter p={placement} now={now} />
+            <MoveOnPlanView p={placement} />
+          </div>
+        </Section>
+      )}
+
+      <Section title={`Tasks (${myTasks.filter(t => t.status === 'open').length} open)`} id="tasks" flush>
+        <TaskList tasks={myTasks} showCase={false} empty="No tasks for this decision." />
+      </Section>
 
       <Section title="Decision">
         <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -253,8 +369,8 @@ Contact: ${by.name}, ${ruleset.councilName}`
                         {c.status === 'done' ? (
                           <div className="text-xs text-good">No longer needed</div>
                         ) : (
-                          <div className={`text-xs ${days < 0 ? 'text-bad' : days <= 3 ? 'text-warn' : 'text-muted'}`}>
-                            {days < 0 ? `${-days} days overdue` : days === 0 ? 'today' : `in ${days} days`}
+                          <div className={`text-xs ${days < 0 && c.key !== 's202' ? 'text-bad' : days <= 3 && days >= 0 ? 'text-warn' : 'text-muted'}`}>
+                            {c.key === 's202' && days < 0 ? 'window closed' : days < 0 ? `${-days} days overdue` : days === 0 ? 'today' : `in ${days} days`}
                           </div>
                         )}
                       </td>
@@ -304,6 +420,14 @@ Contact: ${by.name}, ${ruleset.councilName}`
           )}
         </div>
       )}
+
+      <Section
+        title="History"
+        id="history"
+        description="Every record about this decision, in order. Each is sealed in the chain; the decision itself is never edited."
+      >
+        <PlacementHistory rec={r} events={later} />
+      </Section>
 
       <Section title="Seal">
         <dl className="grid gap-2 text-sm">
