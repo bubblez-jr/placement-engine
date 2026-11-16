@@ -304,7 +304,7 @@ describe('exports', () => {
     const texts = storyOf(e.data.chain, rec).map(s => s.text)
     expect(texts.filter(t => t.startsWith('Exported ')).length).toBe(3)
     expect(texts).toContain(
-      `Exported a case note for the case system, copied to the clipboard. Content fingerprint ${(await sha256Hex(a.content!)).slice(0, 16)}.`,
+      `Exported a case note for the case system, copied out to paste elsewhere. Content fingerprint ${(await sha256Hex(a.content!)).slice(0, 16)}.`,
     )
     expect(await verifyChain(e.data.chain)).toEqual({ ok: true, checked: e.data.chain.length })
     expect(placementsFrom(e.data.chain, at('09:00', '2026-12-11'))[0].state).toBe('moved_out')

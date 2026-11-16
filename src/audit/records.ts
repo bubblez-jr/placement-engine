@@ -325,7 +325,7 @@ export function describeEvent(e: PlacementEvent): string {
     case 'task_cancelled':
       return `Task cancelled: ${b.title}. Reason: “${b.reason}”`
     case 'records_exported':
-      return `Exported ${EXPORT_FORMAT_LABEL[b.format]}${b.records !== undefined ? ` (${b.records} placement${b.records === 1 ? '' : 's'})` : ''}, ${b.delivery === 'download' ? 'downloaded as a file' : 'copied to the clipboard'}. Content fingerprint ${b.contentSha256.slice(0, 16)}.`
+      return `Exported ${EXPORT_FORMAT_LABEL[b.format]}${b.records !== undefined ? ` (${b.records} placement${b.records === 1 ? '' : 's'})` : ''}, ${b.delivery === 'download' ? 'downloaded as a file' : 'copied out to paste elsewhere'}. Content fingerprint ${b.contentSha256.slice(0, 16)}.`
   }
   return ''
 }

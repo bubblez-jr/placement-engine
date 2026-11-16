@@ -53,9 +53,9 @@ export interface PlacementEvent {
   schema: 'placement-event/1'
   at: IsoDateTime
   actor: ActorRef
-  /** The case, or null for a task about a property rather than a case */
+  /** The case, or null for a task about a property, or an export of every placement */
   caseRef: string | null
-  /** The decision record this event is about; null for a task about a property */
+  /** The decision record this event is about; null for a task about a property, or an export of every placement */
   about: { seq: number; rowHash: string } | null
   /** For a task about a property (a certificate), which property */
   propertyId?: string

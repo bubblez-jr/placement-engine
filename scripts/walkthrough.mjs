@@ -1,26 +1,98 @@
 // Clicks through every flow and saves screenshots to screenshots/.
 // Usage: node scripts/walkthrough.mjs [url]   (default: dist-demo/index.html)
+// Needs both builds: `npm run build:demo` (the single-file demo, most flows)
+// and `npm run build` (the hosted build, served here on a local port, for
+// journey times through the site's functions and real file downloads).
+// The postcode service and the site's travel functions are answered by
+// Playwright routes, so those flows run the same every time, failures included.
 // Prints a JSON summary: the widest horizontal overflow seen at phone width,
 // console errors, and the checks below. Exits non-zero if a check fails.
 import { createRequire } from 'node:module'
-import { readFileSync } from 'node:fs'
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { pathToFileURL } from 'node:url'
-import { resolve } from 'node:path'
+import { extname, join, resolve } from 'node:path'
 const { chromium } = createRequire(import.meta.url)('playwright')
 
 const url = process.argv[2] ?? pathToFileURL(resolve('dist-demo/index.html')).href
 const out = p => resolve('screenshots', p)
 const errors = []
+const simulatedFailures = []
 const checks = {}
 const expect = (name, ok) => {
   checks[name] = !!ok
 }
 const browser = await chromium.launch()
 
+// The hosted build, served from dist/ with the app's own fallback to index.html.
+const DIST = resolve('dist')
+if (!existsSync(join(DIST, 'index.html'))) {
+  console.error('dist/index.html is missing: run `npm run build` first.')
+  process.exit(1)
+}
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json' }
+const server = createServer((req, res) => {
+  const path = decodeURIComponent(new URL(req.url, 'http://x').pathname)
+  if (path.startsWith('/api/')) {
+    res.writeHead(404)
+    return res.end('Not routed by the walkthrough')
+  }
+  let file = join(DIST, path)
+  if (!file.startsWith(DIST) || !existsSync(file) || statSync(file).isDirectory()) file = join(DIST, 'index.html')
+  res.writeHead(200, { 'Content-Type': TYPES[extname(file)] ?? 'application/octet-stream' })
+  createReadStream(file).pipe(res)
+})
+await new Promise(r => server.listen(0, '127.0.0.1', r))
+const hosted = `http://127.0.0.1:${server.address().port}/`
+
+// Stand-ins for the outside services. TravelTime is never called: these answer the site's own function URLs.
+const km = (a, b) => {
+  const r = d => (d * Math.PI) / 180
+  const h = Math.sin(r(b.lat - a.lat) / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(r(b.lng - a.lng) / 2) ** 2
+  return 2 * 6371 * Math.asin(Math.sqrt(h))
+}
+const json = (route, status, body) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
+const travelStatus = configured => route => json(route, 200, { configured, provider: 'traveltime', region: configured ? 'lhr1' : null })
+const travelMeasured = route => {
+  const b = route.request().postDataJSON()
+  const cells = b.destinations.map(d => b.origins.map(o => ({ minutes: Math.min(240, Math.round(9 + km(o, d) * 3.4)), km: Math.round(km(o, d) * 12.5) / 10 })))
+  return json(route, 200, { ok: true, source: 'traveltime', partial: false, cells })
+}
+const travelBadKey = route => json(route, 502, { ok: false, code: 'bad_key', message: 'TravelTime did not accept the key' })
+const postcodes = {
+  'E15 1AA': { status: 200, body: { status: 200, result: { postcode: 'E15 1AA', latitude: 51.5418, longitude: 0.0015, admin_district: 'Newham' } } },
+  'E7 9ZZ': { status: 404, body: { status: 404, error: 'Postcode not found' } },
+}
+const postcodeRoute = route => {
+  const pc = decodeURIComponent(route.request().url().split('/postcodes/')[1] ?? '')
+  if (pc === 'E1 1AB') return route.abort('failed')
+  const a = postcodes[pc] ?? { status: 404, body: { status: 404, error: 'Invalid postcode' } }
+  return json(route, a.status, a.body)
+}
+const lhaCsv = [
+  'brma,1_bed,2_bed,3_bed,4_bed',
+  'Inner East London,262.50,312.00,365.00,430.00',
+  'Outer North East London,185.00,226.00,272.00,338.00',
+  'Outer East London,172.00,213.00,255.00,316.00',
+  'Outer South London,178.00,219.00,264.00,331.00',
+  '"Harlow & Stortford",142.00,173.00,214.00,276.00',
+  'Basildon,137.00,168.00,204.00,259.00',
+  'Luton,117.00,142.00,168.00,219.00',
+  'Milton Keynes,127.00,153.00,183.00,239.00',
+  'Chelmsford,142.00,178.00,219.00,280.00',
+].join('\n')
+
 async function open(options, name) {
   const ctx = await browser.newContext(options)
   const page = await ctx.newPage()
-  page.on('console', m => m.type() === 'error' && errors.push(`[${name}] ${m.text()}`))
+  page.on('console', m => {
+    if (m.type() !== 'error') return
+    // A failed request to a stand-in service is the failure being tested (an unknown postcode, a refused
+    // key, a blocked lookup); the browser logs it. Counted apart, never mixed with the app's own errors.
+    if (m.text().startsWith('Failed to load resource') && /api\.postcodes\.io|\/api\/travel-/.test(m.location()?.url ?? ''))
+      return simulatedFailures.push(`[${name}] ${m.location().url}`)
+    errors.push(`[${name}] ${m.text()}`)
+  })
   page.on('pageerror', e => errors.push(`[${name}] ${String(e)}`))
   return { ctx, page }
 }
@@ -344,6 +416,198 @@ await old.waitForSelector('#placement')
 expect('schema1ReadsAsExpiredHold', await old.locator('#placement >> text=Recorded before placements were tracked').isVisible())
 await shot(old, '22-schema1-decision.png')
 
+// ---------- Phase 3 in the shared demo file: places by postcode, a household import, the subsidy table, exports ----------
+const { ctx: p3ctx, page: p3 } = await open({ viewport: { width: 1360, height: 900 } }, 'phase3')
+await p3ctx.route('https://api.postcodes.io/**', postcodeRoute)
+let travelCalls = 0
+await p3ctx.route('**/api/**', route => {
+  travelCalls++
+  return route.abort()
+})
+await p3.goto(url)
+await signIn(p3, 'u-ta-1')
+
+// A place by postcode: found, unknown, the lookup failing; the form stays usable throughout
+await p3.click('text=Parent and three children, needed tonight')
+await p3.waitForSelector('text=Find placements')
+expect('examplePlacesLabelledSynthetic', await p3.locator('text=Synthetic example place').first().isVisible())
+await p3.click('#pc-open')
+await p3.fill('#pc-postcode', 'e7 9zz')
+await p3.click('#pc-lookup')
+await p3.waitForSelector('#pc-message')
+expect('unknownPostcodeExplained', /No postcode E7 9ZZ was found/.test(await p3.textContent('#pc-message')))
+await p3.fill('#pc-postcode', 'E1 1AB')
+await p3.click('#pc-lookup')
+await p3.waitForSelector('#pc-message:has-text("not available just now")')
+expect('postcodeLookupFailureExplained', true)
+await p3.locator('#postcode-panel').screenshot({ path: out('50-postcode-failed.png') })
+await p3.fill('#pc-postcode', 'e15 1aa')
+await p3.click('#pc-lookup')
+await p3.waitForSelector('#pc-found')
+await p3.fill('#pc-name', 'Stratford library homework club')
+await p3.selectOption('#pc-kind', 'support')
+await p3.selectOption('#pc-who', 'c1')
+await p3.click('#pc-add')
+expect('postcodePlaceAdded', await p3.locator('text=Located from postcode E15 1AA (postcodes.io)').isVisible())
+await p3.locator('section:has(h2:has-text("Places that matter"))').screenshot({ path: out('51-postcode-place-added.png') })
+await p3.click('button:has-text("Find placements")')
+await p3.waitForSelector('text=Placement options')
+expect('demoBuildUsesEstimate', (await p3.getAttribute('#journey-source', 'data-outcome')) === 'estimated' && travelCalls === 0)
+expect('subsidyIllustrativeBeforeImport', (await p3.getAttribute('#subsidy-status', 'data-status')) === 'illustrative')
+await shot(p3, '52-results-demo-estimate.png')
+await p3.click('text=Why this property')
+await p3.waitForSelector('text=Every check run')
+expect('postcodePlaceJourneyShown', await p3.locator('td:has-text("Located from postcode E15 1AA")').first().isVisible())
+await p3.click('text=Back to options')
+
+// A household imported from the case system: reported, not searched, fixed on the form, then searched
+await p3.click('nav >> text=New placement')
+await p3.click('#import-open')
+await p3.click('#import-example-wheelchair')
+await p3.waitForSelector('#import-report')
+expect('importNeverSearches', (await p3.locator('text=Placement options').count()) === 0)
+expect('importReportsWhatWasNotUsed', await p3.locator('#import-report >> text=no coordinates (postcode E15 1XX)').isVisible())
+expect('importedWheelchairUserBlocked', (await p3.locator('#error-summary li').count()) === 7)
+await shot(p3, '53-import-report.png')
+await p3.click('button:has-text("Find placements")')
+expect('importedSearchRefusedUntilAnswered', (await p3.locator('text=Placement options').count()) === 0)
+await answerAll(p3, 'a1', 'yes', { assistance_dog: 'no', equipment_or_carer: 'no' })
+await p3.fill('#needFrom', ukToday(2))
+expect('importErrorsClearWhenFixed', (await p3.locator('#error-summary').count()) === 0)
+await p3.click('button:has-text("Find placements")')
+await p3.waitForSelector('text=Placement options')
+expect('importedHouseholdSearched', await p3.locator('text=Case HN-26-0561').first().isVisible())
+await shot(p3, '54-results-imported.png')
+
+// The head of service loads the official subsidy table: a bad file is refused, a good one checked, compared and published
+await switchUser(p3, 'u-hos-1')
+await p3.click('nav >> text=Placement policy')
+await p3.click('#lha-open')
+await p3.fill('#lha-file', lhaCsv + '\nluton,1,2,3,4')
+await p3.click('#lha-check')
+await p3.waitForSelector('#lha-errors')
+expect('subsidyFileChecked', await p3.locator('#lha-errors >> text=luton appears twice').isVisible())
+expect('subsidyNeedsCitationAndConfirmation', (await p3.locator('#lha-errors li').count()) >= 4)
+await p3.locator('#lha-import').screenshot({ path: out('55-subsidy-import-errors.png') })
+await p3.fill('#lha-file', lhaCsv)
+await p3.fill('#lha-citation', 'DWP, Local Housing Allowance rates, January 2011 (walkthrough copy)')
+await p3.fill('#lha-sourceDate', '2011-01-01')
+await p3.check('#lha-confirm')
+await p3.click('#lha-check')
+await p3.waitForSelector('#lha-preview')
+expect('subsidyDiffShown', /9 areas changed, 0 added, 0 removed/.test(await p3.textContent('#lha-diff')))
+await p3.fill('#lha-equality', 'Official rates replace illustrative ones; costs only break near-ties, so no group is newly disadvantaged.')
+await p3.locator('#lha-import').screenshot({ path: out('56-subsidy-import-preview.png') })
+await p3.click('#lha-publish')
+await p3.waitForSelector('text=with the official table')
+expect('subsidyPublishedAsOfficial', (await p3.getAttribute('#subsidy-status-policy', 'data-status')) === 'official')
+await p3.locator('#subsidy-table').screenshot({ path: out('57-subsidy-official.png') })
+await p3.click('nav >> text=Overview')
+await p3.click('text=Parent and three children, needed tonight')
+await p3.fill('#caseRef', 'HN-26-0777')
+await p3.click('button:has-text("Find placements")')
+await p3.waitForSelector('text=Placement options')
+expect('newSearchSaysOfficial', (await p3.getAttribute('#subsidy-status', 'data-status')) === 'official')
+expect('costExplanationSaysOfficial', await p3.locator('text=/After housing benefit subsidy \\(official table\\)/').first().isVisible())
+
+// Exports in the demo file: copy only, and each one recorded
+await p3.click('nav >> text=Overview')
+await p3.click('tbody tr:has-text("HN-26-0412")')
+await p3.waitForSelector('#placement')
+await p3.click('text=Open the audit pack')
+await p3.waitForSelector('text=Seal intact')
+expect('demoBuildHasNoDownloads', (await p3.locator('#export-pdf, #export-note-download').count()) === 0)
+await p3.click('#export-note-copy')
+await p3.waitForSelector('#export-status')
+expect('caseNoteExportRecorded', /recorded as #\d+/.test(await p3.textContent('#export-status')))
+expect('exportJoinsTheStory', await p3.locator('#story >> text=Exported a case note').isVisible())
+await p3.click('nav >> text=Audit log')
+await p3.click('#export-csv-copy')
+await p3.waitForSelector('#export-csv-status')
+expect('csvExportRecorded', /recorded as #\d+/.test(await p3.textContent('#export-csv-status')))
+expect('exportsListedInAuditLog', await p3.locator('td >> text=All placements').first().isVisible())
+await p3.click('section >> button:has-text("Check every seal")')
+expect('chainVerifiesAfterExports', await p3.locator('text=/All \\d+ records intact/').isVisible())
+await shot(p3, '58-audit-log-exports.png')
+
+// ---------- The hosted build: journey times through the site's functions, and real downloads ----------
+const { ctx: hctx, page: hp } = await open({ viewport: { width: 1360, height: 900 }, acceptDownloads: true }, 'hosted')
+await hctx.route('**/api/travel-status', travelStatus(true))
+await hctx.route('**/api/travel-matrix', travelMeasured)
+await hp.goto(hosted)
+await signIn(hp, 'u-ta-1')
+await hp.click('text=Parent and three children, needed tonight')
+await hp.click('button:has-text("Find placements")')
+await hp.waitForSelector('text=Placement options')
+expect('travelTimeUsedWhenConfigured', (await hp.getAttribute('#journey-source', 'data-outcome')) === 'measured')
+expect('travelTimeProvenanceShown', await hp.locator('#journey-source >> text=Public transport times from TravelTime').isVisible())
+await shot(hp, '60-results-traveltime.png')
+await hp.click('text=Why this property')
+await hp.waitForSelector('text=Every check run')
+expect('journeyTaggedTravelTime', await hp.locator('td .chip:has-text("TravelTime")').first().isVisible())
+await shot(hp, '61-property-traveltime.png')
+await hp.click('text=Back to options')
+await hp.click('text=Review and record decision')
+await hp.check('#confirm')
+await hp.check('#consent-status')
+await hp.selectOption('#consent-givenBy', 'Adult 1')
+await hp.check('#consent-method')
+await hp.click('button:has-text("Record decision")')
+await hp.waitForSelector('#placement')
+await hp.click('text=Open the audit pack')
+await hp.waitForSelector('text=Seal intact')
+expect('auditPackSaysTravelTime', await hp.locator('#method-journeys >> text=Public transport times from TravelTime').isVisible())
+const download = async (sel, name) => {
+  const [d] = await Promise.all([hp.waitForEvent('download'), hp.click(sel)])
+  const path = out(`download-${name}`)
+  await d.saveAs(path)
+  return { name: d.suggestedFilename(), text: readFileSync(path, 'utf8') }
+}
+const note = await download('#export-note-download', 'case-note.txt')
+expect(
+  'caseNoteDownloaded',
+  /case-note\.txt$/.test(note.name) && note.text.startsWith('PLACEMENT DECISION: CASE HN-26-0317') && note.text.includes('from TravelTime'),
+)
+const rec = await download('#export-json-download', 'record.json')
+expect('recordJsonDownloaded', JSON.parse(rec.text).snapshot.schema === 'placement-decision/2')
+const pdfDl = await download('#export-pdf', 'audit.pdf')
+expect('pdfDownloaded', pdfDl.name.endsWith('.pdf') && pdfDl.text.startsWith('%PDF'))
+await hp.waitForSelector('#story >> text=Exported the audit pack as a PDF')
+expect('eachDownloadRecorded', (await hp.locator('#story li:has-text("Exported ")').count()) === 3)
+await shot(hp, '62-audit-pack-exports.png')
+await hp.click('nav >> text=Audit log')
+const csv = await download('#export-csv-download', 'placements.csv')
+expect(
+  'placementsCsvDownloaded',
+  csv.text.split('\n')[0].startsWith('decision_record,case_reference,outcome') && csv.text.includes(',measured,illustrative,yes'),
+)
+
+// TravelTime failing: the estimate is used, and the results say why
+await hctx.unroute('**/api/travel-matrix')
+await hctx.route('**/api/travel-matrix', travelBadKey)
+await hp.click('nav >> text=Overview')
+await hp.click('text=Single adult on dialysis, working')
+await hp.click('button:has-text("Find placements")')
+await hp.waitForSelector('text=Placement options')
+expect('travelFallbackRecorded', (await hp.getAttribute('#journey-source', 'data-fallback')) === 'bad_key')
+expect('travelFallbackShown', await hp.locator('#journey-source >> text=TravelTime did not accept this site’s key').isVisible())
+await shot(hp, '63-results-traveltime-failed.png')
+
+// Not switched on (no keys on the server): the estimate, said calmly
+const { ctx: nctx, page: np } = await open({ viewport: { width: 1360, height: 900 } }, 'hosted-off')
+await nctx.route('**/api/travel-status', travelStatus(false))
+await nctx.route('**/api/travel-matrix', route => {
+  travelCalls++
+  return route.abort()
+})
+await np.goto(hosted)
+await signIn(np, 'u-ta-2')
+await np.click('text=Single adult on dialysis, working')
+await np.click('button:has-text("Find placements")')
+await np.waitForSelector('text=Placement options')
+expect('notConfiguredSaysSo', (await np.getAttribute('#journey-source', 'data-fallback')) === 'not_configured' && travelCalls === 0)
+await np.locator('#journey-source').screenshot({ path: out('64-journeys-not-switched-on.png') })
+
 // ---------- Dark mode ----------
 const { page: dp } = await open({ viewport: { width: 1360, height: 900 }, colorScheme: 'dark' }, 'dark')
 await dp.goto(url)
@@ -381,9 +645,10 @@ await shot(dp, '38-properties-dark.png')
 // ---------- Phone ----------
 const { page: pp } = await open({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 }, 'phone')
 let overflow = 0
-const measure = async () => {
-  overflow = Math.max(overflow, await pp.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth))
+const measureOn = async page => {
+  overflow = Math.max(overflow, await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth))
 }
+const measure = () => measureOn(pp)
 await pp.goto(url)
 await measure()
 await shot(pp, '40-sign-in-phone.png')
@@ -447,9 +712,116 @@ await shot(pp, '49-approvals-phone.png')
 await pp.click('#nav-properties')
 await measure()
 
+// Phase 3 on a phone, in the hosted build: journey source, a place by postcode, an import, the subsidy table, exports
+const { ctx: phctx, page: ph } = await open({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, acceptDownloads: true }, 'phone-hosted')
+await phctx.route('**/api/travel-status', travelStatus(true))
+await phctx.route('**/api/travel-matrix', travelMeasured)
+await phctx.route('https://api.postcodes.io/**', postcodeRoute)
+await ph.goto(hosted)
+await signIn(ph, 'u-ooh-1')
+await ph.click('text=Parent and three children, needed tonight')
+await ph.click('#pc-open')
+await ph.fill('#pc-postcode', 'E1 1AB')
+await ph.click('#pc-lookup')
+await ph.waitForSelector('#pc-message')
+await ph.fill('#pc-postcode', 'E15 1AA')
+await ph.click('#pc-lookup')
+await ph.waitForSelector('#pc-found')
+await measureOn(ph)
+await ph.locator('#postcode-panel').screenshot({ path: out('70-postcode-phone.png') })
+await ph.fill('#pc-name', 'Homework club')
+await ph.selectOption('#pc-who', 'c1')
+await ph.click('#pc-add')
+await ph.click('button:has-text("Find placements")')
+await ph.waitForSelector('text=Placement options')
+await measureOn(ph)
+await shot(ph, '71-results-traveltime-phone.png')
+await ph.click('text=Review and record decision')
+await ph.check('#confirm')
+await ph.check('#consent-status')
+await ph.selectOption('#consent-givenBy', 'Adult 1')
+await ph.check('#consent-method')
+await ph.click('button:has-text("Record decision")')
+await ph.waitForSelector('#placement')
+await ph.click('text=Open the audit pack')
+await ph.waitForSelector('text=Seal intact')
+await ph.click('#export-note-copy')
+await ph.waitForSelector('#export-status')
+await measureOn(ph)
+await shot(ph, '72-audit-pack-exports-phone.png')
+await ph.click('nav >> text=New placement')
+await ph.click('#import-open')
+await ph.click('#import-example-wheelchair')
+await ph.waitForSelector('#import-report')
+await measureOn(ph)
+await shot(ph, '73-import-phone.png')
+await switchUser(ph, 'u-hos-1')
+await ph.click('nav >> text=Placement policy')
+await ph.click('#lha-open')
+await ph.fill('#lha-file', lhaCsv)
+await ph.fill('#lha-citation', 'DWP, Local Housing Allowance rates, January 2011 (walkthrough copy)')
+await ph.fill('#lha-sourceDate', '2011-01-01')
+await ph.check('#lha-confirm')
+await ph.click('#lha-check')
+await ph.waitForSelector('#lha-preview')
+await measureOn(ph)
+await ph.locator('#subsidy-table').screenshot({ path: out('74-subsidy-preview-phone.png') })
+await ph.click('nav >> text=Audit log')
+await measureOn(ph)
+
+// Phase 3 in dark mode
+const { ctx: dkctx, page: dk } = await open({ viewport: { width: 1360, height: 900 }, colorScheme: 'dark' }, 'dark-hosted')
+await dkctx.route('**/api/travel-status', travelStatus(true))
+await dkctx.route('**/api/travel-matrix', travelBadKey)
+await dkctx.route('https://api.postcodes.io/**', postcodeRoute)
+await dk.goto(hosted)
+await signIn(dk, 'u-ta-2')
+await dk.click('text=Wheelchair user and two children, fleeing abuse')
+await dk.click('#pc-open')
+await dk.fill('#pc-postcode', 'E7 9ZZ')
+await dk.click('#pc-lookup')
+await dk.waitForSelector('#pc-message')
+await dk.locator('section:has(h2:has-text("Places that matter"))').screenshot({ path: out('80-postcode-dark.png') })
+await dk.click('button:has-text("Find placements")')
+await dk.waitForSelector('text=Placement options')
+await shot(dk, '81-results-fallback-dark.png')
+await dk.click('nav >> text=New placement')
+await dk.click('#import-open')
+await dk.locator('#import-panel').screenshot({ path: out('82-import-panel-dark.png') })
+await dk.click('#import-example-family')
+await dk.waitForSelector('#import-report')
+await shot(dk, '83-import-dark.png')
+await switchUser(dk, 'u-hos-1')
+await dk.click('nav >> text=Placement policy')
+await dk.click('#lha-open')
+await dk.fill('#lha-file', lhaCsv)
+await dk.fill('#lha-citation', 'DWP, Local Housing Allowance rates, January 2011 (walkthrough copy)')
+await dk.fill('#lha-sourceDate', '2011-01-01')
+await dk.check('#lha-confirm')
+await dk.click('#lha-check')
+await dk.waitForSelector('#lha-preview')
+await dk.locator('#subsidy-table').screenshot({ path: out('84-subsidy-preview-dark.png') })
+await dk.click('nav >> text=Audit log')
+await dk.click('#export-csv-copy')
+await dk.waitForSelector('#export-csv-status')
+await dk.locator('#export-placements').screenshot({ path: out('85-export-dark.png') })
+
 await browser.close()
+server.close()
 const failed = Object.entries(checks)
   .filter(([, ok]) => !ok)
   .map(([k]) => k)
-console.log(JSON.stringify({ horizontalOverflowPx: overflow, errors, checksPassed: Object.keys(checks).length - failed.length, checksFailed: failed }, null, 2))
+console.log(
+  JSON.stringify(
+    {
+      horizontalOverflowPx: overflow,
+      errors,
+      simulatedNetworkFailures: simulatedFailures.length,
+      checksPassed: Object.keys(checks).length - failed.length,
+      checksFailed: failed,
+    },
+    null,
+    2,
+  ),
+)
 if (failed.length) process.exitCode = 1

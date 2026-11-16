@@ -133,6 +133,17 @@ async function appendEvent(
   return { data: { ...d, chain: [...d.chain, record] }, record }
 }
 
+/** Where the household's places came from, for the search's data line: synthetic examples, postcode lookups, an imported file. */
+function placesReference(h: Household): string {
+  const kinds = new Set(h.destinations.map(x => x.placeSource ?? 'example'))
+  const parts = [
+    kinds.has('example') && 'synthetic example places v1',
+    kinds.has('postcode') && 'places located from their postcodes (postcodes.io)',
+    kinds.has('import') && 'places from an imported file',
+  ].filter(Boolean)
+  return parts.length ? parts.join('; ') : 'no places recorded'
+}
+
 export async function cmdSearch(
   d: AppData,
   ctx: CommandCtx,
@@ -157,7 +168,7 @@ export async function cmdSearch(
     travel: opts.travel,
     now: ctx.now,
     today: ctx.today,
-    dataVersions: { properties: d.propertiesVersion, reference: 'synthetic reference places v1' },
+    dataVersions: { properties: d.propertiesVersion, reference: placesReference(stamped) },
     id: opts.id,
     context: { openCases: openCases(d, ctx.now) },
     searchedBy: actor,

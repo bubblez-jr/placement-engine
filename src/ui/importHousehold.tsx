@@ -10,8 +10,8 @@ import { NotAllowed } from './bits'
 import { Icon } from './icons'
 
 const EXAMPLES = [
-  { id: 'family', label: 'Family of four (complete)', text: familyExample },
-  { id: 'wheelchair', label: 'Wheelchair user (needs answers)', text: wheelchairExample },
+  { id: 'family', label: 'Family of four (complete)', file: 'household-family-of-four.json', text: familyExample },
+  { id: 'wheelchair', label: 'Wheelchair user (needs answers)', file: 'household-wheelchair-user.json', text: wheelchairExample },
 ]
 
 export type ImportedReport = Pick<HouseholdImport, 'read' | 'notUnderstood' | 'source'> & { fileName: string | null }
@@ -97,7 +97,7 @@ export function ImportHousehold({ onImported }: { onImported: (h: Household, rep
                 id={`import-example-${x.id}`}
                 type="button"
                 className="btn btn-quiet text-sm"
-                onClick={() => run(x.text, `example: ${x.label}`)}
+                onClick={() => run(x.text, `the example file ${x.file}`)}
               >
                 {x.label}
               </button>
@@ -139,13 +139,18 @@ export function ImportReportPanel({ report, onDismiss }: { report: ImportedRepor
     <section id="import-report" className="callout grid gap-2 text-sm" aria-labelledby="import-report-h">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 id="import-report-h" className="font-semibold">
-          Imported{report.fileName ? ` from ${report.fileName}` : ''}
-          {report.source.system ? ` (${report.source.system})` : ''}
+          Imported {report.fileName ? `from ${report.fileName}` : 'from pasted text'}
         </h2>
         <button type="button" className="btn btn-quiet text-sm" onClick={onDismiss}>
           Hide
         </button>
       </div>
+      {report.source.system && (
+        <p>
+          The file says it came from {report.source.system}
+          {report.source.exportedAt ? `, exported ${report.source.exportedAt}` : ''}.
+        </p>
+      )}
       <p>
         Read: {report.read.join('; ')}. <b>Nothing has been searched.</b> Check every detail below, fix anything marked, then press Find placements.
       </p>

@@ -20,8 +20,7 @@ export function JourneySourceNote({ s, id = 'journey-source' }: { s: Pick<Search
     >
       <Icon name={warn ? 'alert' : 'clock'} size={16} className={`mt-0.5 shrink-0 ${warn ? 'text-warn' : 'text-muted'}`} />
       <span>
-        <b>{v.label}.</b> {v.headline}
-        {v.outcome !== 'measured' && <span className="text-muted"> Estimated times come from straight-line distance, not timetables.</span>}
+        <b>{v.label}.</b> {v.detail}
       </span>
     </div>
   )
