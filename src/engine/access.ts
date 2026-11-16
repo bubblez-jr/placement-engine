@@ -31,8 +31,8 @@ export const ACCESS_NEEDS: AccessNeed[] = ['wheelchair_accessible', 'step_free',
  * a wheelchair user.
  */
 export function requiredAccessSubjects(h: Household): string[] {
-  const people = h.members.filter(m => m.wheelchairUser).map(m => m.id)
-  if (h.flags.includes('disability') && people.length === 0) return [HOUSEHOLD_SUBJECT]
+  const people = (Array.isArray(h.members) ? h.members : []).filter(m => m.wheelchairUser).map(m => m.id)
+  if ((Array.isArray(h.flags) ? h.flags : []).includes('disability') && people.length === 0) return [HOUSEHOLD_SUBJECT]
   return people
 }
 
@@ -70,11 +70,6 @@ export function effectiveAccessNeeds(h: Household): EffectiveNeed[] {
 /** Labels of everyone with an assistance dog. */
 export function assistanceDogFor(h: Household): string[] {
   return (h.accessAssessments ?? []).filter(a => a.answers.assistance_dog === 'yes').map(a => subjectLabel(h, a.subject))
-}
-
-/** True when a pet or an assistance dog has to be accommodated. */
-export function petsRequired(h: Household): boolean {
-  return h.petsMustBeAccommodated || assistanceDogFor(h).length > 0
 }
 
 const NEED_PHRASE: Record<AccessNeed, string> = {

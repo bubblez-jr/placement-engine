@@ -207,8 +207,13 @@ export function AuditReport({ seq }: { seq: number }) {
         <h2>2. Household needs</h2>
         <p className="mt-2 text-sm">
           Needed from {formatDate(s.household.needFrom)} for about {s.household.expectedNights} nights. Last settled area: {s.household.homeAreaLabel}. Bedroom
-          need: {s.bedroomNeed}. {s.household.petsMustBeAccommodated ? 'A pet must be accommodated. ' : ''}Priority flags:{' '}
-          {s.household.flags.length ? s.household.flags.join(', ').replaceAll('_', ' ') : 'none'}. Safeguarding exclusion zones:{' '}
+          need: {s.bedroomNeed}.{' '}
+          {s.household.petsMustBeAccommodated
+            ? s.household.accessAssessments
+              ? 'A pet must be accommodated. '
+              : 'A pet or assistance dog must be accommodated. '
+            : ''}
+          Priority flags: {s.household.flags.length ? s.household.flags.join(', ').replaceAll('_', ' ') : 'none'}. Safeguarding exclusion zones:{' '}
           {s.household.safeguardingZones.length} (details restricted). Affordable charges: {gbp(s.household.maxHouseholdContributionWeekly)}/week.
         </p>
         <div className="scroll-x">

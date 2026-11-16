@@ -553,10 +553,10 @@ export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string
       <div className="grid gap-5 lg:grid-cols-2">
         <Section title="Must-haves">
           <div className="grid gap-2">
-            {h.accessNeeds.length > 0 && (
+            {(h.accessNeeds ?? []).length > 0 && (
               <div className="callout text-sm">
-                Recorded under the earlier version, for the whole household: {h.accessNeeds.map(n => ACCESS_NEED_LABEL[n].toLowerCase()).join(', ')}. These
-                still apply.{' '}
+                Recorded under the earlier version, for the whole household: {(h.accessNeeds ?? []).map(n => ACCESS_NEED_LABEL[n].toLowerCase()).join(', ')}.
+                These still apply.{' '}
                 <button type="button" className="link text-sm" onClick={() => set({ accessNeeds: [] })}>
                   Remove them
                 </button>

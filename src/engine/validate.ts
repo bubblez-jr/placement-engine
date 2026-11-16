@@ -155,7 +155,3 @@ export function validateHousehold(h: Household, today: IsoDate, context: Validat
 
   return issues
 }
-
-export function errorsOf(issues: Issue[]): Issue[] {
-  return issues.filter(i => i.severity === 'error')
-}
