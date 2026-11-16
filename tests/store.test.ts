@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { verifyChain } from '../src/audit/chain'
-import { clocksNow, currentConsent, decisionRecords } from '../src/audit/records'
+import { clocksNow, currentConsent, decisionRecords, tasksFrom } from '../src/audit/records'
 import { SCENARIOS } from '../src/data/households'
 import { defaultRuleset } from '../src/data/ruleset'
 import { STAFF } from '../src/data/staff'
@@ -149,7 +149,9 @@ describe('consent can be updated later as a new chain event', () => {
     const { d, id, rec } = await searched()
     const first = await cmdDecide(d, officer, id, accept(rec, { consent: { status: 'not_asked', reason: 'Placed at 02:00, parent asleep.' } }), review)
     const sealed = JSON.stringify(first.record)
-    expect(first.record.snapshot.clocks.map(c => c.key)).toContain('consent-follow-up')
+    expect(first.record.snapshot.clocks.map(c => c.key)).not.toContain('consent-follow-up')
+    const consentTask = (data: AppData) => tasksFrom(data.chain, data.properties, data.rulesets[0], NOW).find(t => t.id === `consent:${first.record.seq}`)
+    expect(consentTask(first.data)).toMatchObject({ status: 'open', owner: { kind: 'user', userId: 'u-ta-1' } })
 
     expect(await refused(cmdUpdateConsent(first.data, auditor, first.record.seq, { status: 'given', givenBy: 'Adult 1', method: 'phone' }))).toBeInstanceOf(
       PermissionError,
@@ -168,7 +170,8 @@ describe('consent can be updated later as a new chain event', () => {
     const r = decisionRecords(data.chain)[0]
     expect(currentConsent(data.chain, r).now).toMatchObject({ kind: 'record', consent: { status: 'refused' } })
     const clocks = clocksNow(data.chain, r)
-    expect(clocks.find(c => c.key === 'consent-follow-up')!.status).toBe('done')
+    expect(clocks.find(c => c.key === 'consent-follow-up')).toBeUndefined()
+    expect(consentTask(data)).toMatchObject({ status: 'done', closedBy: `Consent recorded, record #${record.seq}` })
     expect(clocks.find(c => c.key === 's213aa')).toMatchObject({ status: 'done', label: expect.stringMatching(/Consent refused/) })
   })
 })

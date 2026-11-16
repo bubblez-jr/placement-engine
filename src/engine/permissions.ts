@@ -27,6 +27,7 @@ export type Action =
   | 'act_on_placement'
   | 'complete_task'
   | 'reassign_task'
+  | 'cancel_task'
   | 'view_audit_log'
   | 'run_tamper_demo'
   | 'reset_demo'
@@ -44,6 +45,7 @@ export const ACTION_LABEL: Record<Action, string> = {
   act_on_placement: 'act on a placement',
   complete_task: 'complete a task',
   reassign_task: 'reassign a task',
+  cancel_task: 'cancel a task',
   view_audit_log: 'view the audit log',
   run_tamper_demo: 'run the tamper demonstration',
   reset_demo: 'reset the demo data',
@@ -65,7 +67,7 @@ const CASEWORK: Action[] = [
   'import_household',
   'export_records',
 ]
-const MANAGER: Action[] = [...CASEWORK, 'approve_exception', 'reassign_task']
+const MANAGER: Action[] = [...CASEWORK, 'approve_exception', 'reassign_task', 'cancel_task']
 
 /** The matrix. Anything not listed is refused. */
 export const GRANTS: Record<StaffRole, ReadonlySet<Action>> = {
@@ -95,6 +97,8 @@ export interface PermissionContext {
   decidedByUserId?: string
   /** For tasks: the person a task is assigned to, if it is assigned to a person */
   taskOwnerUserId?: string
+  /** For tasks: the role queue a task is assigned to, if it is assigned to a queue */
+  taskOwnerRole?: StaffRole
 }
 
 export type PermissionCheck = { ok: true } | { ok: false; reason: string }
@@ -105,6 +109,8 @@ export function check(user: Pick<StaffUser, 'id' | 'role'> | null | undefined, a
   if (action === 'approve_exception' && ctx.decidedByUserId === user.id) return { ok: false, reason: 'Nobody can approve their own decision.' }
   if (action === 'complete_task' && ctx.taskOwnerUserId && ctx.taskOwnerUserId !== user.id && !GRANTS[user.role].has('reassign_task'))
     return { ok: false, reason: 'This task is assigned to someone else. A manager can reassign it.' }
+  if (action === 'complete_task' && ctx.taskOwnerRole && ctx.taskOwnerRole !== user.role && !GRANTS[user.role].has('reassign_task'))
+    return { ok: false, reason: `This task is for the ${ROLE_LABEL[ctx.taskOwnerRole].toLowerCase()} queue. A manager can reassign it.` }
   return { ok: true }
 }
 

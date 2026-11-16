@@ -3,7 +3,7 @@ import { useApp } from '../../store/app'
 import { useNav } from '../../store/nav'
 import { formatDateTime } from '../../engine/dates'
 import { shortHash } from '../../audit/hash'
-import { actorNameOf, caseRefOf, recordKind, sealedAt } from '../../audit/records'
+import { actorNameOf, caseRefOf, decisionSeqOf, recordKind, sealedAt } from '../../audit/records'
 import { isDecisionSnapshot } from '../../audit/snapshot'
 import type { ChainCheck } from '../../audit/chain'
 import { NotAllowed, PageHeader, Section } from '../bits'
@@ -62,9 +62,13 @@ export function AuditLog() {
                 {[...data.chain].reverse().map(r => (
                   <tr key={r.seq}>
                     <td>
-                      <button className="link num" onClick={() => go({ view: 'report', seq: isDecisionSnapshot(r.snapshot) ? r.seq : r.snapshot.about.seq })}>
-                        {r.seq}
-                      </button>
+                      {decisionSeqOf(r) !== null ? (
+                        <button className="link num" onClick={() => go({ view: 'report', seq: decisionSeqOf(r)! })}>
+                          {r.seq}
+                        </button>
+                      ) : (
+                        <span className="num">{r.seq}</span>
+                      )}
                     </td>
                     <td className="num whitespace-nowrap">{formatDateTime(sealedAt(r))}</td>
                     <td>{caseRefOf(r)}</td>

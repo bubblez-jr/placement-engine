@@ -111,6 +111,7 @@ const BLOCK_SUMMARY: Partial<Record<GateCode, string>> = {
   ACCESS_WHEELCHAIR: 'not wheelchair accessible',
   ACCESS_GROUND_OR_LIFT: 'no ground floor or lift',
   ACCESS_ADAPTED_BATHROOM: 'no adapted bathroom',
+  ALREADY_BOOKED: 'already held or booked',
 }
 
 export function rejectionSummary(candidates: Candidate[]): string[] {

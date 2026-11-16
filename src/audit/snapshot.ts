@@ -1,4 +1,17 @@
-import type { ActorRef, ConsentRecord, DecisionV1, DecisionV2, IsoDateTime, Property, Ruleset, SearchResult, StatutoryClock } from '../engine/types'
+import type {
+  ActorRef,
+  DecisionTerms,
+  DecisionV1,
+  DecisionV2,
+  IsoDateTime,
+  PlacementEventBody,
+  Property,
+  Ruleset,
+  SearchResult,
+  StatutoryClock,
+} from '../engine/types'
+
+export type { PlacementEventBody } from '../engine/types'
 
 /**
  * Everything frozen at the moment of decision. The record of what the officer
@@ -22,33 +35,30 @@ export interface DecisionSnapshotV1 extends DecisionSnapshotBase {
   decision: DecisionV1
 }
 
-/** Sealed from V2: the decider comes from the signed-in session and consent is a record. */
+/**
+ * Sealed from V2: the decider comes from the signed-in session and consent is
+ * a record. From phase 2 it also carries `terms` (the hold, the exceptions that
+ * need approval, and for a family in shared accommodation the emergency reason
+ * and move-on plan). Phase 1 records have no `terms` and are read as legacy.
+ */
 export interface DecisionSnapshotV2 extends DecisionSnapshotBase {
   schema: 'placement-decision/2'
   decision: DecisionV2
+  terms?: DecisionTerms
 }
 
 export type DecisionSnapshot = DecisionSnapshotV1 | DecisionSnapshotV2
-
-/**
- * A later fact about a sealed decision. Nothing sealed is ever edited: a
- * change is a new record that points back to the one it is about.
- * Phase 1 writes `consent_updated`; the other bodies are reserved for phase 2
- * (placements, approvals, tasks) so the chain format does not change again.
- */
-export type PlacementEventBody =
-  | { type: 'consent_updated'; consent: ConsentRecord; previous: ConsentRecord | { legacyConsentToNotify: boolean } | null }
-  | { type: 'placement_transition'; placementId: string; from: string; to: string; details: Record<string, string> }
-  | { type: 'approval'; outcome: 'approved' | 'rejected'; exception: string; reason: string }
-  | { type: 'task_completed'; taskId: string; evidence: string; reference: string }
 
 export interface PlacementEvent {
   schema: 'placement-event/1'
   at: IsoDateTime
   actor: ActorRef
-  caseRef: string
-  /** The decision record this event is about */
-  about: { seq: number; rowHash: string }
+  /** The case, or null for a task about a property rather than a case */
+  caseRef: string | null
+  /** The decision record this event is about; null for a task about a property */
+  about: { seq: number; rowHash: string } | null
+  /** For a task about a property (a certificate), which property */
+  propertyId?: string
   event: PlacementEventBody
   notes: string[]
 }

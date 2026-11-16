@@ -2,6 +2,7 @@ import { addDays, formatDate, hoursBetween, parseDate } from './dates'
 import { haversineKm } from './geo'
 import { isFamilyHousehold } from './bedrooms'
 import { ACCESS_NEED_LABEL, assistanceDogFor, effectiveAccessNeeds, joinNames, needSentence } from './access'
+import { conflictsFor, occupancyMessage, type OccupiedPeriod } from './occupancy'
 import type { AccessNeed, ComplianceItem, ComplianceType, GateCheck, Household, IsoDateTime, Property, Ruleset, Supplier } from './types'
 
 // Legal references are what the research found; a solicitor should confirm
@@ -25,6 +26,7 @@ export const LAW = {
   fire: 'Regulatory Reform (Fire Safety) Order 2005; 2012 Order art.3',
   hmo: 'Housing Act 2004 Part 2 (HMO licensing); 2012 Order art.3',
   inspection: 'Council policy: inspection before first use',
+  occupancy: 'Council placement policy: one household per unit; bookings and holds from this system',
 } as const
 
 const COMPLIANCE_LABEL: Record<ComplianceType, string> = {
@@ -78,7 +80,15 @@ export function sharedFacilities(p: Property): boolean {
  * Run every hard gate for one property. Returns all checks (passes included)
  * so the audit pack can show what was tested, not only what failed.
  */
-export function runGates(h: Household, p: Property, supplier: Supplier | undefined, rs: Ruleset, bedroomsNeeded: number, now: IsoDateTime): GateCheck[] {
+export function runGates(
+  h: Household,
+  p: Property,
+  supplier: Supplier | undefined,
+  rs: Ruleset,
+  bedroomsNeeded: number,
+  now: IsoDateTime,
+  occupied: OccupiedPeriod[] = [],
+): GateCheck[] {
   const checks: GateCheck[] = []
   const decisionDate = h.needFrom
   const stayEnd = addDays(h.needFrom, h.expectedNights)
@@ -116,6 +126,16 @@ export function runGates(h: Household, p: Property, supplier: Supplier | undefin
       ),
     )
   }
+  // Our own bookings: any overlap with a hold, booking or household in residence removes it.
+  const clashes = conflictsFor(occupied, p.id, decisionDate, stayEnd)
+  checks.push(
+    block(
+      'ALREADY_BOOKED',
+      clashes.length === 0,
+      clashes.length === 0 ? 'Not held or booked for these dates' : clashes.map(c => occupancyMessage(c, h.caseRef)).join('; '),
+      LAW.occupancy,
+    ),
+  )
   const ageHours = hoursBetween(p.availabilityConfirmedAt, now)
   if (ageHours > rs.staleAvailabilityHours) {
     checks.push(

@@ -3,7 +3,7 @@ import { isFamilyHousehold } from './bedrooms'
 import type { DecisionV2, Household, Property, Ruleset, StatutoryClock } from './types'
 import { sharedFacilities } from './gates'
 
-/** Days after the start by which an officer should ask for consent that was not asked at placement. */
+/** Days after the start by which an officer should ask for consent that was not asked at placement (now a task: engine/tasks.ts). */
 export const CONSENT_FOLLOW_UP_DAYS = 7
 
 export const S213AA_BASIS = 'Housing Act 1996 s213AA (Children’s Wellbeing and Schools Act 2026), in force 1 Sep 2026: notify within 14 days, with consent'
@@ -12,6 +12,8 @@ export const S213AA_BASIS = 'Housing Act 1996 s213AA (Children’s Wellbeing and
  * Statutory clocks that start when a placement begins. The legal references
  * are what the research found; a solicitor should confirm them before a pilot.
  * Schema-1 records keep the clocks they were sealed with; this builds new ones.
+ * Since phase 2 the consent follow-up is a task with an owner, not a clock;
+ * phase 1 records keep their sealed `consent-follow-up` clock.
  */
 export function statutoryClocks(h: Household, p: Property, rs: Ruleset, d: DecisionV2): StatutoryClock[] {
   const start = d.startDate
@@ -36,16 +38,6 @@ export function statutoryClocks(h: Household, p: Property, rs: Ruleset, d: Decis
   }
   if (h.members.some(m => m.role === 'child')) {
     const consent = d.consent?.status ?? 'not_asked'
-    if (consent === 'not_asked') {
-      // Until tasks arrive (phase 2), the follow-up is a clock inside the s213AA window.
-      clocks.push({
-        key: 'consent-follow-up',
-        label: 'Ask a parent for consent to notify the school, GP and health visitor',
-        due: addDays(start, CONSENT_FOLLOW_UP_DAYS),
-        basis: `Council practice: ask within ${CONSENT_FOLLOW_UP_DAYS} days so the s213AA notice can still go within 14 days`,
-        status: 'open',
-      })
-    }
     if (consent !== 'refused') {
       clocks.push({
         key: 's213aa',

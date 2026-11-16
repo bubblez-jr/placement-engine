@@ -1,6 +1,19 @@
-import { isDecisionV2, type ConsentRecord, type StatutoryClock } from '../engine/types'
+import {
+  isDecisionV2,
+  type ConsentRecord,
+  type EventFact,
+  type IsoDateTime,
+  type Property,
+  type Ruleset,
+  type StatutoryClock,
+  type TaskOwner,
+} from '../engine/types'
 import { ROLE_LABEL } from '../engine/permissions'
-import { CONSENT_METHOD_LABEL, CONSENT_STATUS_LABEL } from '../engine/decision'
+import { CONSENT_METHOD_LABEL, CONSENT_STATUS_LABEL, sixWeekRuleApplies } from '../engine/decision'
+import { addDays, addHours, formatDate, formatUkTimeOn } from '../engine/dates'
+import { bnbLimitDays, EXCEPTION_LABEL, placementPolicyOf } from '../engine/policy'
+import { DESTINATION_LABEL, foldApproval, foldPlacement, OFFER_METHOD_LABEL, type ApprovalView, type Placement, type PlacementBase } from '../engine/placement'
+import { deriveTasks, ownerLabel, type CaseFacts, type Task } from '../engine/tasks'
 import type { ChainRecord, DecisionRecord } from './chain'
 import { isDecisionSnapshot, isPlacementEvent, type DecisionSnapshot, type PlacementEvent } from './snapshot'
 
@@ -13,7 +26,7 @@ export function decisionRecords(chain: ChainRecord[]): DecisionRecord[] {
 }
 
 export function eventsAbout(chain: ChainRecord[], seq: number): ChainRecord<PlacementEvent>[] {
-  return chain.filter((r): r is ChainRecord<PlacementEvent> => isPlacementEvent(r.snapshot) && r.snapshot.about.seq === seq)
+  return chain.filter((r): r is ChainRecord<PlacementEvent> => isPlacementEvent(r.snapshot) && r.snapshot.about?.seq === seq)
 }
 
 export interface Decider {
@@ -89,20 +102,29 @@ export function clocksNow(chain: ChainRecord[], rec: DecisionRecord): StatutoryC
 export function recordKind(r: ChainRecord): string {
   const p = r.snapshot
   if (isDecisionSnapshot(p)) return p.schema === 'placement-decision/1' ? 'Decision (earlier version)' : 'Decision'
+  const about = p.about ? ` for #${p.about.seq}` : ''
   switch (p.event.type) {
     case 'consent_updated':
-      return `Consent update for #${p.about.seq}`
+      return `Consent update${about}`
     case 'placement_transition':
-      return `Placement update for #${p.about.seq}`
+      return `Placement update${about}`
+    case 'stay_extended':
+      return `Stay changed${about}`
     case 'approval':
-      return `Approval for #${p.about.seq}`
+      return `Approval${about}`
+    case 'approval_deferred':
+      return `Placed out of hours${about}`
     case 'task_completed':
-      return `Task completed for #${p.about.seq}`
+      return `Task completed${about}`
+    case 'task_reassigned':
+      return `Task reassigned${about}`
+    case 'task_cancelled':
+      return `Task cancelled${about}`
   }
 }
 
 export function caseRefOf(r: ChainRecord): string {
-  return isDecisionSnapshot(r.snapshot) ? r.snapshot.search.household.caseRef : r.snapshot.caseRef
+  return isDecisionSnapshot(r.snapshot) ? r.snapshot.search.household.caseRef : (r.snapshot.caseRef ?? 'Property task')
 }
 
 export function actorNameOf(r: ChainRecord): string {
@@ -111,4 +133,175 @@ export function actorNameOf(r: ChainRecord): string {
 
 export function sealedAt(r: ChainRecord): string {
   return isDecisionSnapshot(r.snapshot) ? r.snapshot.frozenAt : r.snapshot.at
+}
+
+/** The decision record a chain record belongs to (itself, or the one an event is about), if any. */
+export function decisionSeqOf(r: ChainRecord): number | null {
+  return isDecisionSnapshot(r.snapshot) ? r.seq : (r.snapshot.about?.seq ?? null)
+}
+
+/** True for records the demo seed created (synthetic history, made through the same commands). */
+export function isSeeded(r: ChainRecord): boolean {
+  return r.snapshot.notes.some(n => n.startsWith(SEEDED_NOTE))
+}
+export const SEEDED_NOTE = 'Seeded demo history'
+
+// ---------- Placements, approvals and tasks ----------
+
+function factOf(r: ChainRecord<PlacementEvent>): EventFact {
+  return { seq: r.seq, at: r.snapshot.at, actor: r.snapshot.actor, body: r.snapshot.event }
+}
+
+/**
+ * What a decision sealed about its placement. Records sealed from phase 2 carry
+ * `terms`. Older ones (schema 1, and phase 1's schema 2) never had a hold or a
+ * lifecycle: they are read as a hold from the decision time under the default
+ * policy, with no exceptions recorded, so they work through the same code and
+ * nothing in them is edited.
+ */
+export function placementBaseOf(r: DecisionRecord): PlacementBase | null {
+  const s = r.snapshot
+  const d = s.decision
+  if (!d.chosenPropertyId) return null
+  const terms = s.schema === 'placement-decision/2' ? s.terms : undefined
+  const cand = s.search.candidates.find(c => c.propertyId === d.chosenPropertyId)
+  const prop = s.properties.find(p => p.id === d.chosenPropertyId)
+  const decidedBy = isDecisionV2(d) ? { userId: d.decidedBy.userId, name: d.decidedBy.name, role: d.decidedBy.role } : null
+  const common = {
+    seq: r.seq,
+    caseRef: s.search.household.caseRef,
+    propertyId: d.chosenPropertyId,
+    propertyLabel: cand?.label ?? prop?.label ?? d.chosenPropertyId,
+    startDate: d.startDate,
+    decidedAt: d.decidedAt,
+    decidedBy,
+    decidedByName: deciderOf(s).name,
+  }
+  if (terms?.placement) {
+    const t = terms.placement
+    return {
+      ...common,
+      plannedEnd: t.plannedEnd,
+      holdUntil: t.holdUntil,
+      sixWeekRule: t.sixWeekRule,
+      limitDays: t.limitDays,
+      exceptions: terms.exceptions,
+      approvalRequired: terms.approvalRequired,
+      ...(t.emergency ? { emergency: t.emergency } : {}),
+      ...(t.moveOnPlan ? { moveOnPlan: t.moveOnPlan } : {}),
+      legacy: false,
+    }
+  }
+  return {
+    ...common,
+    plannedEnd: addDays(d.startDate, s.search.household.expectedNights),
+    holdUntil: addHours(d.decidedAt, placementPolicyOf(s.ruleset).holdHours),
+    sixWeekRule: sixWeekRuleApplies(s.search.household, prop),
+    limitDays: bnbLimitDays(s.ruleset),
+    exceptions: [],
+    approvalRequired: false,
+    legacy: true,
+  }
+}
+
+/** Approval of a decision's exceptions as it stands (also for "no suitable option" decisions, which have no placement). */
+export function approvalOf(chain: ChainRecord[], r: DecisionRecord): ApprovalView {
+  const terms = r.snapshot.schema === 'placement-decision/2' ? r.snapshot.terms : undefined
+  return foldApproval({ exceptions: terms?.exceptions ?? [], approvalRequired: !!terms?.approvalRequired }, eventsAbout(chain, r.seq).map(factOf))
+}
+
+export function placementOf(chain: ChainRecord[], r: DecisionRecord, now: IsoDateTime): Placement | null {
+  const base = placementBaseOf(r)
+  return base ? foldPlacement(base, eventsAbout(chain, r.seq).map(factOf), now) : null
+}
+
+export function placementsFrom(chain: ChainRecord[], now: IsoDateTime): Placement[] {
+  return decisionRecords(chain)
+    .map(r => placementOf(chain, r, now))
+    .filter((p): p is Placement => !!p)
+}
+
+/** What each decision contributes to the task list. */
+export function caseFactsFrom(chain: ChainRecord[], now: IsoDateTime): CaseFacts[] {
+  return decisionRecords(chain).map(r => {
+    const s = r.snapshot
+    const d = s.decision
+    const decider: TaskOwner = isDecisionV2(d)
+      ? { kind: 'user', userId: d.decidedBy.userId, name: d.decidedBy.name, role: d.decidedBy.role }
+      : { kind: 'role', role: 'ta_officer' }
+    const at = consentAtDecision(s)
+    const cur = currentConsent(chain, r)
+    const nowStatus: CaseFacts['consent']['now'] =
+      cur.now.kind === 'record' ? cur.now.consent.status : cur.now.kind === 'legacy' ? (cur.now.consented ? 'given' : 'not_asked') : 'not_applicable'
+    return {
+      seq: r.seq,
+      caseRef: s.search.household.caseRef,
+      decidedAt: d.decidedAt,
+      decider,
+      outcome: d.outcome,
+      placement: placementOf(chain, r, now),
+      approval: approvalOf(chain, r),
+      clocks: clocksNow(chain, r),
+      consent: {
+        atDecision: at.kind === 'not_applicable' ? 'not_applicable' : at.kind === 'record' && at.consent.status === 'not_asked' ? 'not_asked' : 'answered',
+        now: nowStatus,
+        ...(cur.updates.length ? { recordedSeq: cur.updates[cur.updates.length - 1].seq } : {}),
+      },
+      policy: placementPolicyOf(s.ruleset),
+    }
+  })
+}
+
+/** Every task at `now`, from the chain, the inventory and the active policy. */
+export function tasksFrom(chain: ChainRecord[], properties: Property[], ruleset: Ruleset, now: IsoDateTime): Task[] {
+  return deriveTasks({
+    now,
+    cases: caseFactsFrom(chain, now),
+    properties,
+    ruleset,
+    policy: placementPolicyOf(ruleset),
+    events: chain.filter((r): r is ChainRecord<PlacementEvent> => isPlacementEvent(r.snapshot)).map(factOf),
+  })
+}
+
+/** One plain sentence for a later record, for the placement history, the audit pack and the PDF. */
+export function describeEvent(e: PlacementEvent): string {
+  const b = e.event
+  switch (b.type) {
+    case 'consent_updated':
+      return `Consent changed: ${consentSummary({ kind: 'record', consent: b.consent })}.`
+    case 'placement_transition': {
+      const d = b.details
+      switch (d.action) {
+        case 'confirm_provider':
+          return `Provider confirmed the booking: ${d.contactName}, reference ${d.providerReference}.`
+        case 'offer':
+          return `Offered to the household (${OFFER_METHOD_LABEL[d.method].toLowerCase()}).${d.note ? ` Note: “${d.note}”` : ''}`
+        case 'accept':
+          return `The household accepted the offer.${d.note ? ` Note: “${d.note}”` : ''}`
+        case 'refuse':
+          return `The household refused the offer. Their reason: “${d.householdReason}”. Sent to a manager for review.`
+        case 'check_in':
+          return `The household moved in on ${formatDate(d.checkedInOn)}.`
+        case 'move_out':
+          return `The household moved out on ${formatDate(d.movedOutOn)}. Reason: ${d.reason}. Went to: ${DESTINATION_LABEL[d.destination].toLowerCase()}${d.destinationNote ? ` (${d.destinationNote})` : ''}.`
+        case 'cancel':
+          return `Placement cancelled: ${d.reason}`
+      }
+      break
+    }
+    case 'stay_extended':
+      return `Planned end changed from ${formatDate(b.previousEnd)} to ${formatDate(b.newEnd)}: ${b.reason}`
+    case 'approval':
+      return `Exception ${b.outcome} (${b.exceptions.map(x => EXCEPTION_LABEL[x].toLowerCase()).join('; ')}): “${b.reason}”`
+    case 'approval_deferred':
+      return `Placed out of hours, approval to follow: “${b.reason}”. A manager’s approval is due by ${formatUkTimeOn(b.approveBy)}.${b.duringWorkingHours ? ' This route was used during working hours.' : ''}`
+    case 'task_completed':
+      return `Task done: ${b.title}. What was done: “${b.evidence}”. Reference: ${b.reference}.`
+    case 'task_reassigned':
+      return `Task reassigned: ${b.title}, from ${ownerLabel(b.from)} to ${ownerLabel(b.to)}. Note: “${b.note}”`
+    case 'task_cancelled':
+      return `Task cancelled: ${b.title}. Reason: “${b.reason}”`
+  }
+  return ''
 }

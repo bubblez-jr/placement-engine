@@ -94,9 +94,8 @@ describe('consent and the statutory clocks', async () => {
   it('refused: no notification clock at all', () => {
     expect(keys(buildConsentRecord({ status: 'refused', givenBy: 'Adult 1', method: 'phone' }, officer, NOW))).toEqual(['s202:2026-11-23'])
   })
-  it('not asked: a follow-up inside the s213AA window, then the notification', () => {
+  it('not asked: the notification, if consent is given; the follow-up is a task with an owner, not a clock (tests/tasks.test.ts)', () => {
     expect(keys(buildConsentRecord({ status: 'not_asked', reason: 'Placed at 02:00; parent asleep.' }, officer, NOW))).toEqual([
-      'consent-follow-up:2026-11-09',
       's213aa:2026-11-16',
       's202:2026-11-23',
     ])

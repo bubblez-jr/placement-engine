@@ -1,3 +1,4 @@
+import { DEFAULT_PLACEMENT_POLICY } from '../engine/policy'
 import type { Ruleset } from '../engine/types'
 
 // The demo council's placement policy as a versioned rule-set.
@@ -128,6 +129,7 @@ export function defaultRuleset(signedAt: string): Ruleset {
       sendTaxiPerKm: 2.2,
     },
     bnbFamilyLimitWeeks: 6,
+    placement: { ...DEFAULT_PLACEMENT_POLICY, approvalExceptions: [...DEFAULT_PLACEMENT_POLICY.approvalExceptions] },
     signOff: {
       by: 'Head of Housing Needs (demo)',
       role: 'Policy owner',

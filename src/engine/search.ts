@@ -6,6 +6,7 @@ import { buildExplanation } from './explain'
 import { validateHousehold, ValidationError, type ValidationContext } from './validate'
 import type { ActorRef, Candidate, CriterionKey, Household, IsoDate, JourneyResult, Property, Ruleset, SearchResult, SensitivityFlip, Supplier } from './types'
 import type { TravelProvider } from '../travel/provider'
+import type { OccupiedPeriod } from './occupancy'
 
 export interface SearchInput {
   household: Household
@@ -22,6 +23,8 @@ export interface SearchInput {
   /** Other open work, so a duplicate case reference is pointed out */
   context?: ValidationContext
   searchedBy?: ActorRef
+  /** Holds, bookings and households in residence, derived from placements at `now` */
+  occupancy?: OccupiedPeriod[]
 }
 
 /** Pick the recommendation: highest suitability; within the tie-break band, lowest public cost. */
@@ -67,7 +70,7 @@ export async function runSearch(input: SearchInput): Promise<SearchResult> {
 
   const candidates: Candidate[] = properties.map(p => {
     const supplier = suppliers.find(s => s.id === p.supplierId)
-    const checks = runGates(h, p, supplier, rs, need, now)
+    const checks = runGates(h, p, supplier, rs, need, now, input.occupancy)
     const blocks = checks.filter(c => c.severity === 'block' && !c.passed)
     const warnings = checks.filter(c => c.severity === 'warn')
     const journeys: JourneyResult[] = h.destinations.map(d => {

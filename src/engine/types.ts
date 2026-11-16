@@ -256,6 +256,12 @@ export interface Ruleset {
     sendTaxiPerKm: number
   }
   bnbFamilyLimitWeeks: number
+  /**
+   * Holds, approvals, the B&B ladder and task reminders. Absent on policy
+   * versions published before phase 2: `placementPolicyOf()` reads those with
+   * the defaults, and the published version itself is never changed.
+   */
+  placement?: PlacementPolicy
   signOff: {
     by: string
     role: string
@@ -291,6 +297,7 @@ export type GateCode =
   | 'SAFEGUARDING'
   | 'AFFORDABILITY'
   | 'SUPPLIER_NOT_APPROVED'
+  | 'ALREADY_BOOKED'
 
 export interface GateCheck {
   code: GateCode
@@ -489,4 +496,131 @@ export interface StatutoryClock {
   due: IsoDate
   basis: string
   status: 'open' | 'done'
+}
+
+// ---------- Placements, approvals and tasks (phase 2) ----------
+
+/** Situations where a decision needs a manager's approval before the household moves in. */
+export type ExceptionKind = 'shared_family' | 'out_of_area' | 'not_recommended' | 'beyond_bnb_limit' | 'no_suitable'
+
+export interface PlacementPolicy {
+  /** How long a property is held for a decision before the provider must confirm it */
+  holdHours: number
+  /** A task to confirm with the provider appears this many hours before the hold ends */
+  holdWarningHours: number
+  /** Which exceptions need a manager's approval. A family in shared accommodation always does. */
+  approvalExceptions: ExceptionKind[]
+  /** Move-on review for a family in shared accommodation, every this many days */
+  bnbReviewEveryDays: number
+  /** Day of the stay on which the team manager is brought in */
+  bnbManagerDay: number
+  /** Day of the stay from which the move is urgent (one week left of six) */
+  bnbUrgentDay: number
+  /** UK time on the next working day by which an out-of-hours placement must be approved, HH:MM */
+  outOfHoursApprovalBy: string
+  /** A task counts as due soon this many hours before it is due */
+  taskDueSoonHours: number
+  /** An overdue task is escalated to the manager after this many days */
+  taskEscalateAfterDays: number
+  /** Certificates expiring within this many days on any property become a task */
+  certificateWarningDays: number
+  /** A task to arrange the move or an extension appears this many days before a stay or availability ends */
+  stayEndWarningDays: number
+}
+
+export type PlacementState = 'held' | 'provider_confirmed' | 'offered' | 'accepted' | 'checked_in' | 'moved_out' | 'refused' | 'cancelled' | 'hold_expired'
+
+export type PlacementAction = 'confirm_provider' | 'offer' | 'accept' | 'refuse' | 'check_in' | 'move_out' | 'cancel'
+
+export type OfferMethod = 'in_person' | 'phone' | 'written'
+
+export type MoveOutDestination = 'settled_home' | 'other_ta' | 'left' | 'other'
+
+export type EmergencyReason = 'no_self_contained' | 'out_of_hours' | 'immediate_safeguarding' | 'medical_nearby' | 'other'
+
+export type MoveOnRoute = 'self_contained_ta' | 'leased_property' | 'social_housing' | 'private_rented' | 'supported_housing' | 'other'
+
+/** A named person, as frozen into a record (owners of plans and tasks). */
+export interface PersonRef {
+  userId: string
+  name: string
+  role: StaffRole
+}
+
+/** Why a family is going into shared accommodation, in the officer's words. */
+export interface EmergencyRecord {
+  reasonCode: EmergencyReason
+  reasonText: string
+}
+
+/** How the family gets out of shared accommodation, and who owns that. */
+export interface MoveOnPlan {
+  targetDate: IsoDate
+  route: MoveOnRoute
+  routeNote?: string
+  owner: PersonRef
+}
+
+/**
+ * What applied to a decision when it was sealed (from phase 2). Kept in the
+ * record as evidence of what the officer was told, so a later change to the
+ * code or the policy cannot change how an old decision reads.
+ */
+export interface DecisionTerms {
+  exceptions: ExceptionKind[]
+  approvalRequired: boolean
+  placement: {
+    holdHours: number
+    holdUntil: IsoDateTime
+    plannedEnd: IsoDate
+    /** Family in shared accommodation: the six-week limit applies */
+    sixWeekRule: boolean
+    limitDays: number
+    emergency?: EmergencyRecord
+    moveOnPlan?: MoveOnPlan
+  } | null
+}
+
+/** What each step of a placement records. Who and when come from the chain event. */
+export type TransitionDetails =
+  | { action: 'confirm_provider'; contactName: string; providerReference: string }
+  | { action: 'offer'; method: OfferMethod; note?: string }
+  | { action: 'accept'; note?: string }
+  | { action: 'refuse'; householdReason: string }
+  | { action: 'check_in'; checkedInOn: IsoDate }
+  | { action: 'move_out'; movedOutOn: IsoDate; reason: string; destination: MoveOutDestination; destinationNote?: string }
+  | { action: 'cancel'; reason: string }
+
+/** Who a task belongs to: a named person, or a role's shared queue. */
+export type TaskOwner = { kind: 'user'; userId: string; name: string; role: StaffRole } | { kind: 'role'; role: StaffRole }
+
+/**
+ * A later fact about a sealed decision (or, for supply tasks, a property).
+ * Sealed as `placement-event/1`. Nothing sealed is ever edited: a change is a
+ * new record that points back to the one it is about.
+ */
+export type PlacementEventBody =
+  | { type: 'consent_updated'; consent: ConsentRecord; previous: ConsentRecord | { legacyConsentToNotify: boolean } | null }
+  | { type: 'placement_transition'; placementId: string; from: PlacementState; to: PlacementState; details: TransitionDetails }
+  | { type: 'stay_extended'; placementId: string; previousEnd: IsoDate; newEnd: IsoDate; reason: string }
+  | { type: 'approval'; outcome: 'approved' | 'rejected'; exceptions: ExceptionKind[]; reason: string }
+  | {
+      type: 'approval_deferred'
+      exceptions: ExceptionKind[]
+      reason: string
+      /** When the manager's approval task falls due: the next working day at the policy's time */
+      approveBy: IsoDateTime
+      /** True if this route was used during working hours: shown so a manager can see it */
+      duringWorkingHours: boolean
+    }
+  | { type: 'task_completed'; taskId: string; title: string; evidence: string; reference: string }
+  | { type: 'task_reassigned'; taskId: string; title: string; from: TaskOwner; to: TaskOwner; note: string }
+  | { type: 'task_cancelled'; taskId: string; title: string; reason: string }
+
+/** A sealed event as the engine sees it: who, when, what. */
+export interface EventFact {
+  seq: number
+  at: IsoDateTime
+  actor: ActorRef
+  body: PlacementEventBody
 }

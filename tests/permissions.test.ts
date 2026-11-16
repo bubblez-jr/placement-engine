@@ -19,6 +19,7 @@ const MATRIX: Record<Action, [boolean, boolean, boolean, boolean, boolean, boole
   act_on_placement: /*     */ [Y, Y, Y, Y, N, N, N],
   complete_task: /*        */ [Y, Y, Y, Y, Y, N, N],
   reassign_task: /*        */ [N, N, Y, Y, N, N, Y],
+  cancel_task: /*          */ [N, N, Y, Y, N, N, N],
   view_audit_log: /*       */ [Y, Y, Y, Y, Y, Y, Y],
   run_tamper_demo: /*      */ [Y, Y, Y, Y, Y, N, Y],
   reset_demo: /*           */ [N, N, N, N, N, N, Y],
@@ -59,6 +60,15 @@ describe('context rules', () => {
     expect(can({ id: 'u-ta-1', role: 'ta_officer' }, 'complete_task', { taskOwnerUserId: 'u-ta-1' })).toBe(true)
     expect(can({ id: 'u-ta-1', role: 'ta_officer' }, 'complete_task', { taskOwnerUserId: 'u-ta-2' })).toBe(false)
     expect(can({ id: 'u-mgr-1', role: 'team_manager' }, 'complete_task', { taskOwnerUserId: 'u-ta-2' })).toBe(true)
+  })
+  it('a task in a role queue can be completed by that role or a manager', () => {
+    expect(can({ id: 'u-sup-1', role: 'compliance_officer' }, 'complete_task', { taskOwnerRole: 'compliance_officer' })).toBe(true)
+    expect(check({ id: 'u-ta-1', role: 'ta_officer' }, 'complete_task', { taskOwnerRole: 'compliance_officer' })).toEqual({
+      ok: false,
+      reason: 'This task is for the supply and compliance officer queue. A manager can reassign it.',
+    })
+    expect(can({ id: 'u-ta-1', role: 'ta_officer' }, 'complete_task', { taskOwnerRole: 'team_manager' })).toBe(false)
+    expect(can({ id: 'u-mgr-1', role: 'team_manager' }, 'complete_task', { taskOwnerRole: 'compliance_officer' })).toBe(true)
   })
   it('nobody signed in may do anything', () => {
     for (const a of ACTIONS) expect(can(null, a)).toBe(false)
