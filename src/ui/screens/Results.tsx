@@ -212,7 +212,12 @@ export function Results({ searchId }: { searchId: string }) {
             <MiniMap household={s.household} candidates={s.candidates} properties={data.properties} recommendedId={s.recommendedId} onPick={openProperty} />
           </Section>
           <Section title="Suitability against public cost">
-            <ScatterPlot candidates={s.candidates} recommendedId={s.recommendedId} onPick={openProperty} />
+            <ScatterPlot
+              candidates={s.candidates}
+              recommendedId={s.recommendedId}
+              onPick={openProperty}
+              costNote={`Costs use ${subsidy.label.toLowerCase()}.`}
+            />
           </Section>
         </div>
       )}

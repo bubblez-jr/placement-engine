@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../../store/app'
+import { subsidyFor } from '../provenance'
 import { useNav } from '../../store/nav'
 import { useUser } from '../../auth/session'
 import { addDays, formatDate, formatDateTime } from '../../engine/dates'
@@ -58,6 +59,7 @@ export function Decide({ searchId, propertyId }: { searchId: string; propertyId?
   }, [focusSummary])
 
   const eligible = s ? s.candidates.filter(c => c.eligible) : []
+  const subsidy = s ? subsidyFor(s, data.rulesets) : null
   const noneSuitable = eligible.length === 0
   const isOverride = !noneSuitable && choice !== s?.recommendedId
   const input: DecisionInput = {
@@ -173,7 +175,8 @@ export function Decide({ searchId, propertyId }: { searchId: string; propertyId?
                 <span className="min-w-0 flex-1">
                   <span className="font-bold">{c.label}</span> {c.propertyId === s.recommendedId && <span className="chip chip-accent">Recommended</span>}
                   <span className="mt-1 flex flex-wrap gap-2 text-sm text-muted">
-                    <TierTag tier={c.tier} district={c.district} /> Suitability {c.score} · TA budget {gbp(c.cost.taNetPerNight, 2)}/night
+                    <TierTag tier={c.tier} district={c.district} /> Suitability {c.score} · TA budget {gbp(c.cost.taNetPerNight, 2)}/night after subsidy (
+                    {subsidy?.status === 'official' ? 'official table' : 'illustrative figures'})
                   </span>
                 </span>
               </label>

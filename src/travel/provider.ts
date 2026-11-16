@@ -46,7 +46,5 @@ export interface TravelMatrix {
  */
 export interface TravelProvider {
   id: string
-  label: string
-  disclaimer: string
   matrix(q: TravelQuery): Promise<TravelMatrix>
 }

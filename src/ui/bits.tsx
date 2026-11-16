@@ -439,7 +439,18 @@ function niceTicks(min: number, max: number, count = 5): number[] {
 }
 
 /** Suitability (up) against public cost per night (left is cheaper). One series. */
-export function ScatterPlot({ candidates, recommendedId, onPick }: { candidates: Candidate[]; recommendedId: string | null; onPick: (id: string) => void }) {
+export function ScatterPlot({
+  candidates,
+  recommendedId,
+  onPick,
+  costNote,
+}: {
+  candidates: Candidate[]
+  recommendedId: string | null
+  onPick: (id: string) => void
+  /** Which subsidy figures the costs use, said under the chart */
+  costNote?: string
+}) {
   const [hover, setHover] = useState<string | null>(null)
   const pts = candidates.filter(c => c.eligible)
   if (pts.length === 0) return <p className="text-muted">No eligible options to plot.</p>
@@ -576,7 +587,7 @@ export function ScatterPlot({ candidates, recommendedId, onPick }: { candidates:
         </svg>
       </div>
       <figcaption className="mt-1 text-xs text-muted">
-        Higher is more suitable; further left costs the public less. Ringed: the recommendation. Click a point for its detail.
+        Higher is more suitable; further left costs the public less. Ringed: the recommendation. Click a point for its detail.{costNote ? ` ${costNote}` : ''}
       </figcaption>
     </figure>
   )

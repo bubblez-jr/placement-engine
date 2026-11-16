@@ -171,3 +171,16 @@ describe('runSearch enforces validation', () => {
     expect((await scenarioSearch('brief')).validation).toEqual([])
   })
 })
+
+describe('places and the last settled area (phase 3: imports can leave them unset)', () => {
+  it('needs a last settled area with a location', () => {
+    expect(paths(errors({ ...base(), homeArea: { lat: NaN, lng: NaN }, homeAreaLabel: '' }))).toEqual(['homeArea'])
+  })
+  it('needs every place named and located', () => {
+    expect(paths(errors({ ...base(), destinations: [dest({ name: '  ' })] }))).toEqual(['place-d1'])
+    expect(paths(errors({ ...base(), destinations: [dest({ location: { lat: NaN, lng: 0 } })] }))).toEqual(['place-d1'])
+  })
+  it('accepts a place located from a postcode', () => {
+    expect(errors({ ...base(), destinations: [dest({ placeSource: 'postcode', postcode: 'E15 1AA', refId: 'Postcode E15 1AA' })] })).toEqual([])
+  })
+})

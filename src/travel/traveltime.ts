@@ -57,7 +57,7 @@ function chunks<T>(xs: T[], n: number): T[][] {
   return out
 }
 
-export function createTravelTimeProvider(deps: TravelTimeDeps): TravelProvider & { status: () => Promise<{ configured: boolean } | null> } {
+export function createTravelTimeProvider(deps: TravelTimeDeps): TravelProvider {
   const base = deps.base ?? ''
   let cached: Promise<{ configured: boolean } | null> | null = null
 
@@ -141,11 +141,5 @@ export function createTravelTimeProvider(deps: TravelTimeDeps): TravelProvider &
     }
   }
 
-  return {
-    id: 'traveltime-v4',
-    label: 'Public transport times from TravelTime',
-    disclaimer: 'Timetable-based journey times from TravelTime, through this site’s own server. Falls back to the labelled estimate on any failure.',
-    matrix,
-    status,
-  }
+  return { id: 'traveltime-v4', matrix }
 }

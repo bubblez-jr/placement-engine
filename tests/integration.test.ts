@@ -1,3 +1,5 @@
+import familyFile from '../docs/examples/household-family-of-four.json?raw'
+import wheelchairFile from '../docs/examples/household-wheelchair-user.json?raw'
 import { describe, expect, it } from 'vitest'
 import { verifyChain } from '../src/audit/chain'
 import { caseNoteText, placementsCsv } from '../src/audit/exports'
@@ -19,8 +21,6 @@ const TODAY = '2026-11-16'
 const at = (hhmm: string, date = TODAY) => `${date}T${hhmm}:00.000Z`
 const as = (id: string, now = at('10:00'), today = TODAY): CommandCtx => ({ user: STAFF.find(s => s.id === id)!, now, today })
 const officer = as('u-ta-1')
-import familyFile from '../docs/examples/household-family-of-four.json?raw'
-import wheelchairFile from '../docs/examples/household-wheelchair-user.json?raw'
 const EXAMPLES: Record<string, string> = { 'household-family-of-four.json': familyFile, 'household-wheelchair-user.json': wheelchairFile }
 const example = (name: string) => EXAMPLES[name]
 const refused = async (p: Promise<unknown> | (() => unknown)) => {

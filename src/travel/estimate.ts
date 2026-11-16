@@ -42,9 +42,6 @@ export function estimateCells(q: TravelQuery): TravelCell[] {
 
 export const estimateProvider: TravelProvider = {
   id: 'estimate-v1',
-  label: 'Estimated journey times (demo model)',
-  disclaimer:
-    'Journey times are estimated from straight-line distance for this demo. A pilot uses timetable-based times (TravelTime or a self-hosted r5 router on bus and rail timetables).',
   async matrix(q: TravelQuery): Promise<TravelMatrix> {
     const cells = estimateCells(q)
     return { cells, run: { requested: 'estimate', fallback: null, counts: { measured: 0, estimated: cells.length, noRoute: 0 } } }
