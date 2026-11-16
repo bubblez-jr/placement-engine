@@ -1,6 +1,7 @@
 import { SessionProvider, useSession, useUser } from './auth/session'
 import { check, ROLE_LABEL } from './engine/permissions'
 import { isMine } from './engine/tasks'
+import { approvalPending } from './engine/placement'
 import { SignIn } from './ui/screens/SignIn'
 import { AppProvider, useApp } from './store/app'
 import { NavProvider, useNav, type Route } from './store/nav'
@@ -115,7 +116,7 @@ function Shell() {
   const { route, go } = useNav()
   const { activeRuleset, tasks } = useApp()
   const user = useUser()
-  const approvals = useApprovalQueue().filter(x => x.a.status === 'awaiting' || x.a.status === 'out_of_hours')
+  const approvals = useApprovalQueue().filter(x => approvalPending(x.a, x.p))
   const mine = tasks.filter(t => t.status === 'open' && isMine(t, user))
   const late = mine.filter(t => t.escalation === 'overdue' || t.escalation === 'escalated').length
   const canApprove = check(user, 'approve_exception').ok

@@ -92,9 +92,9 @@ describe('the six-week ladder, at fixed times', () => {
   })
   it('day 42: limit reached, the head of service owns it; day 43 records the breach', () => {
     const t42 = ladder('2026-12-14T12:00:00.000Z').find(x => x.kind === 'bnb_limit')!
-    expect(t42).toMatchObject({ owner: { kind: 'role', role: 'head_of_service' }, urgent: true, detail: 'Day 42 of 42.' })
+    expect(t42).toMatchObject({ owner: { kind: 'role', role: 'head_of_service' }, urgent: true, detail: '42 of 42 days used.' })
     const t43 = ladder('2026-12-15T12:00:00.000Z').find(x => x.kind === 'bnb_limit')!
-    expect(t43.detail).toMatch(/^Breach: day 43 of 42/)
+    expect(t43.detail).toMatch(/^Over the limit: 43 days used of 42/)
     expect(t43.escalation).toBe('overdue')
     expect(escalationTarget(t43.owner)).toBeUndefined()
   })

@@ -146,6 +146,7 @@ export async function seedDemo(now: IsoDateTime): Promise<AppData> {
     const s = await cmdSearch(d, ctx, scenario('dialysis', ukDate(at), { caseRef: 'HN-26-0471' }), { id: 'S-DEMO-OVERRIDE', travel: estimateProvider })
     d = s.data
     const second = s.result.candidates.filter(c => c.eligible && c.propertyId !== s.result.recommendedId).sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))[0]
+    if (!second) return d
     d = (
       await cmdDecide(
         d,

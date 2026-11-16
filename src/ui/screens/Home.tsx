@@ -5,6 +5,7 @@ import { formatDateTime, parseDate, ukDate } from '../../engine/dates'
 import { requiredCompliance } from '../../engine/gates'
 import { check } from '../../engine/permissions'
 import { isMine } from '../../engine/tasks'
+import { approvalPending } from '../../engine/placement'
 import { decisionRecords, deciderOf } from '../../audit/records'
 import { useUser } from '../../auth/session'
 import { PageHeader, Section } from '../bits'
@@ -40,7 +41,7 @@ export function Home() {
   const mine = tasks.filter(t => t.status === 'open' && isMine(t, user))
   const late = mine.filter(t => t.escalation === 'overdue' || t.escalation === 'escalated').length
   const canApprove = check(user, 'approve_exception').ok
-  const waiting = useApprovalQueue().filter(x => x.a.status === 'awaiting' || x.a.status === 'out_of_hours')
+  const waiting = useApprovalQueue().filter(x => approvalPending(x.a, x.p))
   const occupiedToday = new Set(occupancy.filter(o => o.from <= today && (o.to === null || o.to > today)).map(o => o.propertyId))
   const decided = decisions.length
   const accepted = decisions.filter(r => r.snapshot.decision.outcome === 'accepted').length

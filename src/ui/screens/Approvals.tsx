@@ -6,6 +6,7 @@ import { approvalOf, decisionRecords, deciderOf } from '../../audit/records'
 import { formatDateTime, formatUkTimeOn } from '../../engine/dates'
 import { check } from '../../engine/permissions'
 import { EXCEPTION_LABEL } from '../../engine/policy'
+import { approvalPending } from '../../engine/placement'
 import { NotAllowed, PageHeader, Section } from '../bits'
 import { ApprovalChip, ApprovalPanel, holdText, StateChip } from '../placement'
 
@@ -25,7 +26,7 @@ export function Approvals() {
   const queue = useApprovalQueue()
   const allowed = check(user, 'approve_exception')
   const waiting = queue
-    .filter(x => x.a.status === 'awaiting' || x.a.status === 'out_of_hours')
+    .filter(x => approvalPending(x.a, x.p))
     .sort((a, b) => (a.a.status === 'out_of_hours' ? 0 : 1) - (b.a.status === 'out_of_hours' ? 0 : 1) || a.r.seq - b.r.seq)
   const decided = queue
     .filter(x => x.a.status === 'approved' || x.a.status === 'rejected')
@@ -85,7 +86,7 @@ export function Approvals() {
                       )}
                     </div>
                   </div>
-                  {open === r.seq && <ApprovalPanel rec={r} approval={a} showExceptions={false} />}
+                  {open === r.seq && <ApprovalPanel rec={r} approval={a} placement={p} showExceptions={false} />}
                 </li>
               )
             })}

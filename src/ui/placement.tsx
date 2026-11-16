@@ -12,6 +12,7 @@ import { check } from '../engine/permissions'
 import {
   ACTION_LABEL,
   approvalBlock,
+  approvalPending,
   DEFERRAL_MIN_CHARS,
   DESTINATION_LABEL,
   LIFECYCLE,
@@ -30,6 +31,7 @@ import {
   type TransitionInput,
 } from '../engine/placement'
 import { EXCEPTION_LABEL } from '../engine/policy'
+import { quoted } from '../engine/text'
 import { conflictsFor, occupancyMessage } from '../engine/occupancy'
 import { dueText, ESCALATION_LABEL, ownerLabel, TASK_KIND_LABEL, validateCancel, validateCompletion, validateReassign, type Task } from '../engine/tasks'
 import { ROLE_LABEL } from '../engine/permissions'
@@ -247,10 +249,10 @@ export function Stepper({ p }: { p: Placement }) {
           <b>{STATE_LABEL[p.state]}.</b>{' '}
           {p.state === 'refused' &&
             p.refusal &&
-            `The household said: “${p.refusal.reason}”. Recorded by ${p.refusal.actor.name}, ${formatDateTime(p.refusal.at)}.`}
+            `The household said: ${quoted(p.refusal.reason)} Recorded by ${p.refusal.actor.name}, ${formatDateTime(p.refusal.at)}.`}
           {p.state === 'cancelled' && p.cancellation && `${p.cancellation.reason} (${p.cancellation.actor.name}, ${formatDateTime(p.cancellation.at)}).`}
           {p.state === 'hold_expired' &&
-            `Nobody recorded the provider’s confirmation before the hold ended at ${formatUkTimeOn(p.holdUntil)}, so the property is free for other cases.${p.legacy ? ' This decision was recorded before placements were tracked, so its hold is read from the decision time.' : ''}`}
+            `Nobody recorded the provider’s confirmation before the hold ended at ${formatUkTimeOn(p.holdUntil)}, so the property is free for other cases.`}
         </p>
       )}
     </div>
@@ -269,18 +271,18 @@ export function SharedStayCounter({ p, now }: { p: Placement; now: string }) {
         <span className="text-sm font-semibold">
           {s.breached ? (
             <span className="text-bad">
-              Over the limit: day {s.day} of {s.limit}
+              Over the limit: {s.day} days used of {s.limit}
             </span>
           ) : (
             <>
-              Day {s.day} of {s.limit} in shared accommodation
+              {s.day} of {s.limit} days used in shared accommodation
             </>
           )}
           {s.ended && <span className="font-normal text-muted"> (moved out {formatDate(p.movedOutOn!)})</span>}
         </span>
         <span className="text-xs text-muted">Limit reached {formatDate(sharedStayLimitDate(p))}</span>
       </div>
-      <div className="h-2.5 rounded-full bg-sunken" role="img" aria-label={`Day ${s.day} of ${s.limit}`}>
+      <div className="h-2.5 rounded-full bg-sunken" role="img" aria-label={`${s.day} of ${s.limit} days used`}>
         <div className="h-full rounded-full" style={{ width: `${pct}%`, background: tone }} />
       </div>
     </div>
@@ -331,11 +333,18 @@ export function PlacementActions({ p }: { p: Placement }) {
 
   if (actions.length === 0)
     return (
-      <p className="text-sm text-muted">
-        {p.state === 'moved_out'
-          ? 'The household has moved out. Nothing more to do on this placement.'
-          : 'This placement is closed. Nothing more can be recorded on it.'}
-      </p>
+      <div className="grid gap-1">
+        {done && (
+          <p role="status" className="text-sm text-good">
+            {done}
+          </p>
+        )}
+        <p className="text-sm text-muted">
+          {p.state === 'moved_out'
+            ? 'The household has moved out. Nothing more to do on this placement.'
+            : 'This placement is closed. Nothing more can be recorded on it.'}
+        </p>
+      </div>
     )
   if (!allowed.ok) return <NotAllowed reason={allowed.reason} />
 
@@ -603,7 +612,17 @@ export function ExtendStay({ p }: { p: Placement }) {
 
 // ---------- Approval ----------
 
-export function ApprovalPanel({ rec, approval, showExceptions = true }: { rec: DecisionRecord; approval: ApprovalView; showExceptions?: boolean }) {
+export function ApprovalPanel({
+  rec,
+  approval,
+  placement,
+  showExceptions = true,
+}: {
+  rec: DecisionRecord
+  approval: ApprovalView
+  placement: Placement | null
+  showExceptions?: boolean
+}) {
   const { decideApproval } = useApp()
   const user = useUser()
   const [outcome, setOutcome] = useState<'approved' | 'rejected' | ''>('')
@@ -630,12 +649,15 @@ export function ApprovalPanel({ rec, approval, showExceptions = true }: { rec: D
           ), {formatDateTime(approval.decision.at)}: “{approval.decision.reason}”
         </p>
       )}
-      {(approval.status === 'awaiting' || approval.status === 'out_of_hours') &&
+      {(approval.status === 'awaiting' || approval.status === 'out_of_hours') && !approvalPending(approval, placement) && (
+        <p className="text-sm text-muted">Nothing left to approve: the placement is {STATE_LABEL[placement!.state].toLowerCase()}.</p>
+      )}
+      {approvalPending(approval, placement) &&
         (allowed.ok ? (
           <ActionForm
             id="approval-form"
             submitLabel="Record the approval decision"
-            validate={() => validateApproval(approval, { outcome, reason })}
+            validate={() => validateApproval(approval, { outcome, reason }, placement)}
             onSubmit={() => decideApproval(rec.seq, { outcome: outcome || undefined, reason })}
           >
             {issues => (

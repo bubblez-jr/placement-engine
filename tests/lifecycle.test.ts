@@ -230,6 +230,15 @@ describe('manager approval of exceptions, through the store', () => {
     const again = await cmdSearch(r.data, officer, household('brief'), { id: 'S-2', travel: estimateProvider })
     expect(again.result.candidates.find(c => c.propertyId === other)!.eligible).toBe(true)
   })
+  it('once the hold has ended unapproved, there is nothing left to approve and no task for it', async () => {
+    const { data: d } = await override()
+    const later = as('u-mgr-1', at('10:00', '2026-11-03'), '2026-11-03')
+    const holdTask = tasks(d, at('07:00', '2026-11-03')).find(t => t.kind === 'hold')!
+    expect(holdTask.detail).toMatch(/A manager must approve the exception first/)
+    const e = (await refused(cmdDecideApproval(d, later, 1, { outcome: 'approved', reason: 'Late, but agreed.' }))) as ValidationError
+    expect(e.issues[0].message).toBe('There is nothing left to approve: the placement is hold expired.')
+    expect(tasks(d, later.now).some(t => t.kind === 'approval')).toBe(false)
+  })
   it('an approval task cannot be closed by "complete" or cancelled', async () => {
     const { data: d } = await override()
     expect(((await refused(cmdCompleteTask(d, manager, 'approval:1', { evidence: 'Spoke to the officer.', reference: 'CALL-1' }))) as Error).message).toMatch(

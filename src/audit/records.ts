@@ -11,6 +11,7 @@ import {
 import { ROLE_LABEL } from '../engine/permissions'
 import { CONSENT_METHOD_LABEL, CONSENT_STATUS_LABEL, EMERGENCY_REASON_LABEL, MOVE_ON_ROUTE_LABEL, sixWeekRuleApplies } from '../engine/decision'
 import { addDays, addHours, formatDate, formatUkTimeOn } from '../engine/dates'
+import { quoted } from '../engine/text'
 import { bnbLimitDays, EXCEPTION_LABEL, placementPolicyOf } from '../engine/policy'
 import {
   DESTINATION_LABEL,
@@ -289,7 +290,7 @@ export function describeEvent(e: PlacementEvent): string {
         case 'accept':
           return `The household accepted the offer.${d.note ? ` Note: “${d.note}”` : ''}`
         case 'refuse':
-          return `The household refused the offer. Their reason: “${d.householdReason}”. Sent to a manager for review.`
+          return `The household refused the offer. Their reason: ${quoted(d.householdReason)} Sent to a manager for review.`
         case 'check_in':
           return `The household moved in on ${formatDate(d.checkedInOn)}.`
         case 'move_out':
@@ -304,9 +305,9 @@ export function describeEvent(e: PlacementEvent): string {
     case 'approval':
       return `${b.outcome === 'approved' ? 'Approved' : 'Rejected'} by a manager. Exceptions: ${b.exceptions.map(x => EXCEPTION_LABEL[x]).join('; ')}. Reasons: “${b.reason}”`
     case 'approval_deferred':
-      return `Placed out of hours, approval to follow: “${b.reason}”. A manager’s approval is due by ${formatUkTimeOn(b.approveBy)}.${b.duringWorkingHours ? ' This route was used during working hours.' : ''}`
+      return `Placed out of hours, approval to follow: ${quoted(b.reason)} A manager’s approval is due by ${formatUkTimeOn(b.approveBy)}.${b.duringWorkingHours ? ' This route was used during working hours.' : ''}`
     case 'task_completed':
-      return `Task done: ${b.title}. What was done: “${b.evidence}”. Reference: ${b.reference}.`
+      return `Task done: ${b.title}. What was done: ${quoted(b.evidence)} Reference: ${b.reference}.`
     case 'task_reassigned':
       return `Task reassigned: ${b.title}, from ${ownerLabel(b.from)} to ${ownerLabel(b.to)}. Note: “${b.note}”`
     case 'task_cancelled':

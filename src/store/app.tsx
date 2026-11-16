@@ -29,7 +29,7 @@ import {
   openCases,
   type CommandCtx,
 } from './commands'
-import { activeRulesetOf, type AppData, type HashedRuleset, type ReviewLog } from './data'
+import { activeRulesetOf, seed, type AppData, type HashedRuleset, type ReviewLog } from './data'
 import { cmdReset, seedDemo } from './demo'
 import { KEY_V1, KEY_V2, loadStored } from './migrate'
 import { load, remove, save } from './storage'
@@ -106,7 +106,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let cancelled = false
     ;(async () => {
       const now = new Date().toISOString()
-      const d = loadStored({ load }, now) ?? (await seedDemo(now))
+      const d =
+        loadStored({ load }, now) ??
+        (await seedDemo(now).catch(err => {
+          // The history is a convenience: never let it stop the demo from opening.
+          console.warn('Demo history could not be created; starting without it.', err)
+          return seed(now, ukDate(now))
+        }))
       if (!cancelled) {
         setData(d)
         save(KEY_V2, d)

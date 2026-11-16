@@ -36,6 +36,7 @@ import {
 import { OVERRIDE_REASONS } from './Decide'
 import { ErrorSummary, NotAllowed, PageHeader, Section } from '../bits'
 import { Icon } from '../icons'
+import { quoted } from '../../engine/text'
 import { ConsentFields, ConsentText } from '../consent'
 
 function CopyBox({ id, text }: { id: string; text: string }) {
@@ -237,8 +238,8 @@ Contact: ${by.name}, ${ruleset.councilName}`
             Placed out of hours, approval to follow
           </div>
           <p className="mt-1 text-sm">
-            {approval.deferral.actor.name} went ahead without a manager’s approval at {formatDateTime(approval.deferral.at)}: “{approval.deferral.reason}”. A
-            manager must approve or reject by {formatUkTimeOn(approval.deferral.approveBy)}.
+            {approval.deferral.actor.name} went ahead without a manager’s approval on {formatDateTime(approval.deferral.at)}: {quoted(approval.deferral.reason)}{' '}
+            A manager must approve or reject by {formatUkTimeOn(approval.deferral.approveBy)}.
             {approval.deferral.duringWorkingHours && <b> This route was used during working hours.</b>}
           </p>
         </div>
@@ -293,7 +294,7 @@ Contact: ${by.name}, ${ruleset.councilName}`
           id="approval"
           description="This decision raised exceptions that a manager or the head of service must approve. The deciding officer cannot approve it."
         >
-          <ApprovalPanel rec={r} approval={approval} />
+          <ApprovalPanel rec={r} approval={approval} placement={placement} />
         </Section>
       )}
 

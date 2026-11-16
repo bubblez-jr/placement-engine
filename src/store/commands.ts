@@ -319,7 +319,7 @@ export async function cmdDecideApproval(d: AppData, ctx: CommandCtx, seq: number
   const dec = rec.snapshot.decision
   assertCan(ctx.user, 'approve_exception', { decidedByUserId: 'decidedBy' in dec ? dec.decidedBy.userId : undefined })
   const approval = approvalOf(d.chain, rec)
-  const issues = validateApproval(approval, input)
+  const issues = validateApproval(approval, input, placementOf(d.chain, rec, ctx.now))
   if (issues.length) throw new ValidationError(issues)
   return appendEvent(d, ctx, { rec }, { type: 'approval', outcome: input.outcome!, exceptions: approval.exceptions, reason: input.reason!.trim() })
 }

@@ -1,6 +1,7 @@
 import { addDays, addHours, endOfDay, formatDate, formatUkTimeOn, nextWorkingDayAt, ukDate } from './dates'
 import { complianceLabel, requiredCompliance } from './gates'
-import { LIVE, sharedStayDay, STATE_LABEL, type ApprovalView, type Placement } from './placement'
+import { quoted } from './text'
+import { approvalClears, approvalPending, LIVE, sharedStayDay, type ApprovalView, type Placement } from './placement'
 import { ROLE_LABEL } from './permissions'
 import type { ActorRef, EventFact, IsoDateTime, Issue, PlacementPolicy, Property, Ruleset, StaffRole, StaffUser, StatutoryClock, TaskOwner } from './types'
 
@@ -160,7 +161,8 @@ function caseTasks(c: CaseFacts, now: IsoDateTime): Draft[] {
 
   // Approval of an exception: the manager's queue. Closed by the approval itself.
   const a = c.approval
-  if (a.status !== 'not_required') {
+  const moot = (a.status === 'awaiting' || a.status === 'out_of_hours') && !approvalPending(a, p)
+  if (a.status !== 'not_required' && !moot) {
     const deferral = a.status === 'awaiting' ? undefined : a.deferral
     const due = deferral ? deferral.approveBy : p ? p.holdUntil : nextWorkingDayAt(c.decidedAt, '17:00')
     const ooh = !!deferral
@@ -191,7 +193,7 @@ function caseTasks(c: CaseFacts, now: IsoDateTime): Draft[] {
       id: `hold:${c.seq}`,
       kind: 'hold',
       title: `Confirm ${p.propertyLabel} with the provider before the hold ends`,
-      detail: `The hold ends at ${formatUkTimeOn(p.holdUntil)}. After that the property is free for other cases.`,
+      detail: `The hold ends at ${formatUkTimeOn(p.holdUntil)}. After that the property is free for other cases.${approvalClears(a) ? '' : ' A manager must approve the exception first, unless the household cannot wait.'}`,
       basis: `Council placement policy: holds last ${Math.round((new Date(p.holdUntil).getTime() - new Date(p.decidedAt).getTime()) / 3_600_000)} hours`,
       owner: c.decider,
       due: p.holdUntil,
@@ -206,7 +208,7 @@ function caseTasks(c: CaseFacts, now: IsoDateTime): Draft[] {
       id: `refusal:${c.seq}`,
       kind: 'refusal_review',
       title: `Review the household’s refusal of ${p.propertyLabel}`,
-      detail: `The household said: “${p.refusal.reason}”. Recorded by ${p.refusal.actor.name}. This product records the refusal and draws no conclusion from it.`,
+      detail: `The household said: ${quoted(p.refusal.reason)} Recorded by ${p.refusal.actor.name}. This product records the refusal and draws no conclusion from it.`,
       basis: 'Council placement policy: refusals are reviewed by a manager',
       owner: role('team_manager'),
       due: nextWorkingDayAt(p.refusal.at, '17:00'),
@@ -221,7 +223,7 @@ function caseTasks(c: CaseFacts, now: IsoDateTime): Draft[] {
       id: `rejected-move:${c.seq}`,
       kind: 'rejected_move',
       title: `Arrange a move: the exception for ${p.propertyLabel} was rejected`,
-      detail: `${a.decision.actor.name} rejected the exception: “${a.decision.reason}”. The family moved in under the out-of-hours route.`,
+      detail: `${a.decision.actor.name} rejected the exception: ${quoted(a.decision.reason)} The family moved in under the out-of-hours route.`,
       basis: 'Council placement policy: exceptions need a manager’s approval',
       owner: c.decider,
       due: nextWorkingDayAt(a.decision.at, '17:00'),
@@ -288,8 +290,8 @@ function caseTasks(c: CaseFacts, now: IsoDateTime): Draft[] {
         title: `${title} (${p.propertyLabel})`,
         detail:
           kind === 'bnb_limit' && stay.breached
-            ? `Breach: day ${stay.day} of ${stay.limit}. The dates come from the sealed move-in record, so the breach cannot be lost.`
-            : `Day ${stay.day} of ${stay.limit}.`,
+            ? `Over the limit: ${stay.day} days used of ${stay.limit}. The dates come from the sealed move-in record, so the breach cannot be lost.`
+            : `${stay.day} of ${stay.limit} days used.`,
         basis,
         owner: who,
         due: endOfDay(addDays(start, day)),
@@ -440,11 +442,6 @@ export function dueText(t: Task, now: IsoDateTime): string {
   if (hours < 24) return `due in ${Math.max(1, Math.round(hours))} h`
   const days = Math.round(hours / 24)
   return `due in ${days} day${days === 1 ? '' : 's'}`
-}
-
-/** Plain-English state of a placement for a task's context line. */
-export function placementLine(p: Placement): string {
-  return `${p.propertyLabel} · ${STATE_LABEL[p.state]}`
 }
 
 // ---------- What closing or moving a task needs ----------

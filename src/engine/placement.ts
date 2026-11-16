@@ -75,7 +75,6 @@ export const TARGET: Record<PlacementAction, PlacementState> = {
 /** Steps that wait for a manager's approval, unless the out-of-hours route was used. */
 export const NEEDS_APPROVAL: PlacementAction[] = ['confirm_provider', 'offer', 'check_in']
 
-export const TERMINAL: PlacementState[] = ['moved_out', 'refused', 'cancelled', 'hold_expired']
 /** States that hold or occupy the property and still have a next step. */
 export const LIVE: PlacementState[] = ['held', 'provider_confirmed', 'offered', 'accepted', 'checked_in']
 
@@ -376,11 +375,22 @@ export function validateExtension(p: Placement, input: { newEnd?: string; reason
   return issues
 }
 
-export function validateApproval(a: ApprovalView, input: { outcome?: string; reason?: string }): Issue[] {
+/** Whether an approval still matters: a placement that is refused, cancelled or whose hold ended has nothing left to approve. */
+export function approvalPending(a: ApprovalView, p: Pick<Placement, 'state'> | null): boolean {
+  return (a.status === 'awaiting' || a.status === 'out_of_hours') && !(p && VOID.includes(p.state))
+}
+
+const VOID: PlacementState[] = ['refused', 'cancelled', 'hold_expired']
+
+export function validateApproval(a: ApprovalView, input: { outcome?: string; reason?: string }, p: Pick<Placement, 'state'> | null = null): Issue[] {
   const issues: Issue[] = []
   const error = (path: string, message: string) => issues.push({ path, message, severity: 'error' })
   if (a.status !== 'awaiting' && a.status !== 'out_of_hours') {
     error('ap-outcome', a.status === 'not_required' ? 'This decision does not need approval.' : `This decision was already ${a.status}.`)
+    return issues
+  }
+  if (!approvalPending(a, p)) {
+    error('ap-outcome', `There is nothing left to approve: the placement is ${STATE_LABEL[p!.state].toLowerCase()}.`)
     return issues
   }
   if (input.outcome !== 'approved' && input.outcome !== 'rejected') error('ap-outcome', 'Choose approve or reject.')
@@ -407,7 +417,7 @@ export function validateDeferral(a: ApprovalView, p: Placement | null, input: { 
   return issues
 }
 
-/** Day of the stay in shared accommodation (day 1 is the first night), or null when the six-week rule does not apply. */
+/** Days used of the stay in shared accommodation (nights since the start: 0 on arrival), or null when the six-week rule does not apply. */
 export function sharedStayDay(p: Placement, now: IsoDateTime): { day: number; limit: number; ended: boolean; breached: boolean } | null {
   if (!p.sixWeekRule || ['refused', 'cancelled', 'hold_expired'].includes(p.state)) return null
   const start = p.checkedInOn ?? p.startDate
