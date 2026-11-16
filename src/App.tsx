@@ -1,3 +1,6 @@
+import { SessionProvider, useSession, useUser } from './auth/session'
+import { ROLE_LABEL } from './engine/permissions'
+import { SignIn } from './ui/screens/SignIn'
 import { AppProvider, useApp } from './store/app'
 import { NavProvider, useNav, type Route } from './store/nav'
 import { Icon, Logo } from './ui/icons'
@@ -30,9 +33,68 @@ function initials(name: string): string {
     .join('')
 }
 
+function UserBadge({ compact = false }: { compact?: boolean }) {
+  const user = useUser()
+  const { signOut } = useSession()
+  const avatar = (
+    <span
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[0.75rem] font-semibold"
+      style={{ background: 'var(--rail-active)', color: 'var(--rail-accent)' }}
+      aria-hidden="true"
+    >
+      {initials(user.name)}
+    </span>
+  )
+  const who = (
+    <span className="min-w-0 flex-1">
+      <span className="block truncate text-[0.82rem] font-medium" style={{ color: 'var(--rail-ink)' }}>
+        {user.name}
+      </span>
+      <span className={`block text-xs ${compact ? 'truncate' : ''}`} style={{ color: 'var(--rail-muted)' }}>
+        {ROLE_LABEL[user.role]}
+      </span>
+    </span>
+  )
+  // Both end this demo session; "Switch user" is how a demo shows the officer and manager views.
+  const buttons = (
+    <>
+      <button
+        id={compact ? 'switch-user-phone' : 'switch-user'}
+        className="rail-link shrink-0 rounded-md px-2 py-1 text-xs font-semibold"
+        onClick={signOut}
+        title="Choose another demo user"
+      >
+        Switch user
+      </button>
+      {!compact && (
+        <button id="sign-out" className="rail-link shrink-0 rounded-md px-2 py-1 text-xs font-semibold" onClick={signOut}>
+          Sign out
+        </button>
+      )}
+    </>
+  )
+  if (compact)
+    return (
+      <div className="flex items-center gap-2.5 py-2" aria-label="Signed in">
+        {avatar}
+        {who}
+        {buttons}
+      </div>
+    )
+  return (
+    <div className="grid gap-1.5 px-1" aria-label="Signed in">
+      <div className="flex items-start gap-2.5">
+        {avatar}
+        {who}
+      </div>
+      <div className="flex gap-1 pl-[2.6rem]">{buttons}</div>
+    </div>
+  )
+}
+
 function Shell() {
   const { route, go } = useNav()
-  const { activeRuleset, officer } = useApp()
+  const { activeRuleset } = useApp()
   const nav = (
     <ul className="flex gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
       {NAV.map(n => {
@@ -75,33 +137,23 @@ function Shell() {
             </button>
             <span className="chip chip-warn lg:hidden">Demo data</span>
           </div>
-          <nav aria-label="Main" className="pb-3 lg:flex-1 lg:pb-0">
+          <nav aria-label="Main" className="pb-1 lg:flex-1 lg:pb-0">
             {nav}
           </nav>
+          <div className="border-t lg:hidden" style={{ borderColor: 'var(--rail-active)' }}>
+            <UserBadge compact />
+          </div>
           <div className="hidden gap-3 border-t py-4 text-xs lg:grid lg:grid-cols-1" style={{ borderColor: 'var(--rail-active)', color: 'var(--rail-muted)' }}>
             <div className="rounded-lg px-3 py-2" style={{ background: 'var(--rail-hover)' }}>
-              <div className="font-semibold" style={{ color: '#f3c46a' }}>
+              <div className="font-semibold" style={{ color: 'var(--rail-warn)' }}>
                 Synthetic demo data
               </div>
-              <div>Invented households and properties</div>
+              <div>Invented households, properties and staff. Demo sign-in, no password.</div>
             </div>
             <div className="px-1">
               Policy v{activeRuleset.version} · <span className="hash">{activeRuleset.hash.slice(0, 10)}</span>
             </div>
-            <div className="flex items-center gap-2.5 px-1">
-              <span
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[0.75rem] font-semibold"
-                style={{ background: 'var(--rail-active)', color: 'var(--rail-accent)' }}
-              >
-                {initials(officer.name)}
-              </span>
-              <span className="min-w-0">
-                <span className="block truncate font-medium" style={{ color: 'var(--rail-ink)' }}>
-                  {officer.name}
-                </span>
-                <span className="block truncate">{officer.role}</span>
-              </span>
-            </div>
+            <UserBadge />
           </div>
         </aside>
       </div>
@@ -145,12 +197,23 @@ function Screen({ route }: { route: Route }) {
   }
 }
 
-export default function App() {
+/** Nothing in the app is usable until someone is signed in. */
+function Gate() {
+  const { user } = useSession()
+  if (!user) return <SignIn />
   return (
-    <AppProvider>
+    <AppProvider key={user.id}>
       <NavProvider>
         <Shell />
       </NavProvider>
     </AppProvider>
+  )
+}
+
+export default function App() {
+  return (
+    <SessionProvider>
+      <Gate />
+    </SessionProvider>
   )
 }

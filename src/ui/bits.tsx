@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react'
-import type { Candidate, CriterionKey, CriterionScore, GateCheck } from '../engine/types'
+import { forwardRef, useEffect, useState, type InputHTMLAttributes, type ReactNode } from 'react'
+import type { Candidate, CriterionKey, CriterionScore, GateCheck, Issue } from '../engine/types'
 import { TIER_LABEL } from '../engine/scoring'
 import { Icon } from './icons'
 
@@ -133,6 +133,173 @@ export function GateList({ checks, showPasses = true, columns = false }: { check
         </li>
       ))}
     </ul>
+  )
+}
+
+// ---------- Forms: errors, warnings, permissions ----------
+
+/** Move focus to a field named in an issue (the issue path is the control's id). */
+export function focusField(id: string) {
+  const el = document.getElementById(id)
+  if (!el) return
+  el.scrollIntoView({ block: 'center' })
+  el.focus({ preventScroll: true })
+}
+
+/**
+ * The error summary at the top of a form. It takes focus on a failed submit,
+ * and each line links to the field to fix.
+ */
+export const ErrorSummary = forwardRef<HTMLDivElement, { issues: Issue[]; title?: string }>(function ErrorSummary({ issues, title }, ref) {
+  const errors = issues.filter(i => i.severity === 'error')
+  if (errors.length === 0) return null
+  return (
+    <div ref={ref} tabIndex={-1} role="alert" aria-labelledby="error-summary-title" className="callout border-bad bg-bad-soft" id="error-summary">
+      <h2 id="error-summary-title" className="flex items-center gap-2 font-semibold text-bad">
+        <Icon name="alert" size={17} />
+        {title ?? `There ${errors.length === 1 ? 'is a problem' : `are ${errors.length} problems`} to fix`}
+      </h2>
+      <ul className="mt-2 grid gap-1 pl-6">
+        {errors.map((e, i) => (
+          <li key={`${e.path}-${i}`} className="list-disc text-bad marker:text-bad">
+            <a
+              href={`#${e.path}`}
+              className="link text-bad underline underline-offset-2"
+              onClick={ev => {
+                ev.preventDefault()
+                focusField(e.path)
+              }}
+            >
+              {e.message}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+})
+
+/** Non-blocking warnings, with an optional link to related work. */
+export function WarningList({
+  issues,
+  onLink,
+  title = 'Check before you go on',
+}: {
+  issues: Issue[]
+  onLink?: (l: NonNullable<Issue['link']>) => void
+  title?: string
+}) {
+  const warnings = issues.filter(i => i.severity === 'warning')
+  if (warnings.length === 0) return null
+  return (
+    <div className="callout border-warn bg-warn-soft" role="status">
+      <div className="flex items-center gap-2 font-semibold text-warn">
+        <Icon name="alert" size={16} />
+        {title}
+      </div>
+      <ul className="mt-1.5 grid gap-1 text-sm">
+        {warnings.map((w, i) => (
+          <li key={`${w.path}-${i}`}>
+            {w.message}{' '}
+            {w.link && onLink && (
+              <button type="button" className="link text-sm" onClick={() => onLink(w.link!)}>
+                {w.link.seq ? `Open decision #${w.link.seq}` : 'Open that search'}
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/** The inline error under a field. Its id is what the field's aria-describedby points to. */
+export function FieldError({ id, issues }: { id: string; issues: Issue[] }) {
+  const mine = issues.filter(i => i.path === id && i.severity === 'error')
+  if (mine.length === 0) return null
+  return (
+    <span id={`${id}-error`} className="flex items-start gap-1 text-sm font-medium text-bad">
+      <Icon name="alert" size={14} className="mt-[3px] shrink-0" />
+      <span>{mine.map(m => m.message).join(' ')}</span>
+    </span>
+  )
+}
+
+/** A labelled field with an optional hint and its inline error, outside the label so it is announced once. */
+export function Field({
+  id,
+  label,
+  hint,
+  issues,
+  children,
+  className = '',
+}: {
+  id: string
+  label: string
+  hint?: string
+  issues: Issue[]
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <div className={`field ${className}`}>
+      <label htmlFor={id} className="text-[0.8rem] font-semibold text-muted">
+        {label}
+      </label>
+      {children}
+      {hint && (
+        <span id={`${id}-hint`} className="text-xs text-faint">
+          {hint}
+        </span>
+      )}
+      <FieldError id={id} issues={issues} />
+    </div>
+  )
+}
+
+/** id, aria-invalid and aria-describedby for a control, from the current issues. */
+export function fieldA11y(id: string, issues: Issue[], hintId?: string) {
+  const invalid = issues.some(i => i.path === id && i.severity === 'error')
+  const describedBy = [invalid ? `${id}-error` : '', hintId ?? ''].filter(Boolean).join(' ')
+  return { id, 'aria-invalid': invalid || undefined, 'aria-describedby': describedBy || undefined }
+}
+
+/**
+ * A number input that never turns empty input into 0: blank or unreadable
+ * input reaches the form as NaN, which validation reports.
+ */
+export function NumberInput({
+  value,
+  onValue,
+  ...rest
+}: { value: number; onValue: (n: number) => void } & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'type'>) {
+  const shown = (n: number) => (Number.isFinite(n) ? String(n) : '')
+  const [text, setText] = useState(shown(value))
+  useEffect(() => {
+    // Follow changes made from outside (a scenario load), not the officer's own typing.
+    setText(t => ((t.trim() === '' ? Number.isNaN(value) : Number(t) === value) ? t : shown(value)))
+  }, [value])
+  return (
+    <input
+      {...rest}
+      type="number"
+      inputMode="decimal"
+      value={text}
+      onChange={e => {
+        setText(e.target.value)
+        onValue(e.target.value.trim() === '' ? NaN : Number(e.target.value))
+      }}
+    />
+  )
+}
+
+/** Why a control is not available to this person. */
+export function NotAllowed({ reason, className = '' }: { reason: string; className?: string }) {
+  return (
+    <p className={`flex items-start gap-2 text-sm text-muted ${className}`}>
+      <Icon name="lock" size={15} className="mt-[3px] shrink-0" />
+      <span>{reason}</span>
+    </p>
   )
 }
 

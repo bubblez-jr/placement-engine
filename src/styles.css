@@ -24,6 +24,7 @@
   --rail-hover: #13323a;
   --rail-active: #184047;
   --rail-accent: #62d2c4;
+  --rail-warn: #f3c46a;
   --good: #1a7341;
   --good-soft: #e3f3e8;
   --warn: #8a5600;
@@ -65,6 +66,7 @@
     --rail-hover: #0f2427;
     --rail-active: #14353a;
     --rail-accent: #62d2c4;
+    --rail-warn: #f3c46a;
     --good: #52c47f;
     --good-soft: #12301f;
     --warn: #e7aa43;
@@ -105,6 +107,7 @@
   --rail-hover: #0f2427;
   --rail-active: #14353a;
   --rail-accent: #62d2c4;
+  --rail-warn: #f3c46a;
   --good: #52c47f;
   --good-soft: #12301f;
   --warn: #e7aa43;
@@ -260,6 +263,7 @@ body {
   .field {
     display: grid;
     gap: 0.35rem;
+    align-content: start;
   }
   .field > span {
     font-size: 0.8rem;
