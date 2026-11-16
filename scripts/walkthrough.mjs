@@ -147,6 +147,7 @@ expect('occupiedPropertyRuledOut', await page.locator('text=/Occupied \\d+ \\w+ 
 expect('ruledOutSaysNothingAboutOtherCase', (await page.locator('text=HN-26-0317').count()) === 0)
 await heldMsg.scrollIntoViewIfNeeded()
 await shot(page, '12b-results-held-ruled-out.png')
+await page.locator('section.panel:has(h2:has-text("Ruled out by the checks"))').screenshot({ path: out('12b-ruled-out-section.png') })
 
 // The full placement, from hold to move-out, each step sealed with who and when
 await page.click('nav >> text=Overview')

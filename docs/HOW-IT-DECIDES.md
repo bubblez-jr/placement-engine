@@ -34,6 +34,7 @@ Every property is checked. A failed **block** removes it, with a reason the offi
 | Approved supplier                        | Supplier is on the council's DPS / framework                                                                                                                     | Procurement Act 2023; council contract                            |
 | Availability                             | Available on the date needed; availability not ended                                                                                                             | Council policy                                                    |
 | Stale availability _(warn)_              | Last confirmed more than 72 hours ago                                                                                                                            | Council policy                                                    |
+| Already held or booked                   | Another placement holds, has booked or occupies the property on any night of the stay (section 10). Dates only: nothing about the other household                | Council placement policy (one household per unit)                 |
 | Too few bedrooms                         | Below the LHA size criteria (couples share; under-10s share; same-sex under-16s share; 16+ own room)                                                             | HA 1996 s210; HA 1985 Part 10                                     |
 | Too large                                | More than 1 bedroom above need (keeps large homes for large families)                                                                                            | Council allocation policy                                         |
 | Accessible unit reserved                 | Adapted units go only to households whose access answers need a wheelchair-accessible home or an adapted bathroom                                                | Council allocation policy                                         |
@@ -101,9 +102,13 @@ The officer must actively choose:
 - **Choose another option**, with a reason code and their own words (at least 20 characters).
 - **No suitable option**, with the search steps taken.
 
-Where a placement is made for a household with children, they also record **consent** to tell the children's school, GP and health visitor (s213AA): given or refused (by which adult, and how: in person, by phone or in writing), or not asked yet (with the reason). Nothing is pre-selected. Not asked adds a follow-up deadline 7 days after the start, inside the 14-day notice window; refused means no notice is drafted, and the record says so. A later answer is recorded as a new sealed record that points to the decision; the decision itself is never edited.
+Where a placement is made for a household with children, they also record **consent** to tell the children's school, GP and health visitor (s213AA): given or refused (by which adult, and how: in person, by phone or in writing), or not asked yet (with the reason). Nothing is pre-selected. Not asked gives the officer a task to ask within 7 days of the start, inside the 14-day notice window; refused means no notice is drafted, and the record says so. A later answer is recorded as a new sealed record that points to the decision; the decision itself is never edited.
 
-These rules live in `src/engine/decision.ts` and the store checks them before sealing, as it checks the permissions in section 9.
+Where a family (children or a pregnant member) goes into B&B or shared accommodation, the officer also records **why** (a coded reason and their own words) and a **move-on plan**: the date to move by (no later than the six-week limit), the route being pursued, and a named owner.
+
+Some decisions are **exceptions** that a manager must approve (section 10): a family in shared accommodation (always), an out-of-area (tier 4) placement, choosing an option other than the recommendation, a planned stay beyond the six-week limit for shared accommodation, and "no suitable option". The screen says so before the officer records it.
+
+These rules live in `src/engine/decision.ts` and the store checks them before sealing, as it checks the permissions in section 9. Recording a decision also checks, at that moment, that nobody has taken the property since the search ran (the search may be minutes old); if they have, the store refuses and the officer is offered a fresh search.
 
 They confirm they reviewed the full list. The record also logs when the list was opened, which property details were opened, and whether the comparison was used. This is the evidence of meaningful human involvement that UK GDPR Art.22A–D (from 5 Feb 2026) expects when health or disability data is used.
 
@@ -111,14 +116,15 @@ They confirm they reviewed the full list. The record also logs when the list was
 
 At decision time the engine freezes a snapshot (`placement-decision/2`; records sealed by the MVP are `placement-decision/1` and still verify and render): the search, every candidate with every check, the policy version and hash, the properties as held, the decision, and the statutory clocks. It is serialised as canonical JSON (sorted keys) and hashed with SHA-256 together with the previous record's hash. Editing any past record breaks its hash and every hash after it. The audit log can check the whole chain, and has a tamper demonstration.
 
-Later facts about a decision are their own records in the same chain (`placement-event/1`), each pointing to the decision's sequence number and hash. Phase 1 writes consent updates; placements, approvals and task completions follow in phase 2.
+Records sealed from phase 2 also hold the decision's **terms**: the exceptions it raised, the hold's end, the planned end, and for a family in shared accommodation the emergency reason and move-on plan. They show what applied at the time, whatever later changes.
+
+Later facts about a decision are their own records in the same chain (`placement-event/1`), each pointing to the decision's sequence number and hash: each step of the placement, a changed planned end, an approval or rejection, "placed out of hours, approval to follow", consent updates, and tasks completed (with their evidence), reassigned or cancelled. A task about a property rather than a case (a certificate) points to the property instead.
 
 Statutory clocks set from the start date:
 
 - s208 notice to the receiving council (14 days).
 - The 6-week limit for families in shared accommodation.
 - s213AA notification to school, GP and health visitor (14 days, with consent; none if consent was refused).
-- Ask for consent (7 days), when it was not asked at placement.
 - The household's 21-day window to request a review.
 - The date availability ends, if that is within the stay.
 
@@ -129,7 +135,11 @@ Statutory clocks set from the start date:
 |                                          | TA / out-of-hours officer | Team manager | Head of service | Supply and compliance | Auditor | Admin |
 | ---------------------------------------- | :-----------------------: | :----------: | :-------------: | :-------------------: | :-----: | :---: |
 | Run a search, record a decision, consent |            Yes            |     Yes      |       Yes       |                       |         |       |
-| Approve an exception (phase 2)           |                           |     Yes      |       Yes       |                       |         |       |
+| Act on a placement (each step)           |            Yes            |     Yes      |       Yes       |                       |         |       |
+| Approve an exception                     |                           |     Yes      |       Yes       |                       |         |       |
+| Complete a task (their own or queue's)   |            Yes            |     Yes      |       Yes       |          Yes          |         |       |
+| Reassign a task                          |                           |     Yes      |       Yes       |                       |         |  Yes  |
+| Cancel a task                            |                           |     Yes      |       Yes       |                       |         |       |
 | Publish placement policy                 |                           |              |       Yes       |                       |         |  Yes  |
 | Import or edit properties                |                           |              |                 |          Yes          |         |  Yes  |
 | Confirm availability                     |            Yes            |     Yes      |       Yes       |          Yes          |         |  Yes  |
@@ -137,4 +147,59 @@ Statutory clocks set from the start date:
 | Run the tamper demonstration             |            Yes            |     Yes      |       Yes       |          Yes          |         |  Yes  |
 | Reset the demo data                      |                           |              |                 |                       |         |  Yes  |
 
-Nobody approves their own decision. The auditor reads everything and changes nothing.
+Nobody approves their own decision. A manager can complete a task assigned to someone else; an officer can complete only their own and their role queue's. The auditor reads everything and changes nothing.
+
+## 10. After the decision: placements, approvals and tasks
+
+None of this is stored as a status that could drift: the placement, who occupies which property, the approval and the task list are all worked out from the sealed records, the inventory and the time now. Only new facts are stored, as sealed records. The engine never reads the clock; the time is passed in.
+
+### The placement
+
+A decision that chooses a property starts a placement, **held** for the policy's hold length (24 hours). Then:
+
+| Step                      | From                                 | Records                                                                    |
+| ------------------------- | ------------------------------------ | -------------------------------------------------------------------------- |
+| Provider confirmed        | Held                                 | Who confirmed at the provider, and their booking reference                 |
+| Offered                   | Provider confirmed                   | How the offer was made (in person, by phone, in writing), an optional note |
+| Accepted                  | Offered                              | An optional note                                                           |
+| Refused                   | Offered                              | The household's reason in their words. A manager reviews it (below)        |
+| Moved in                  | Accepted                             | The date (not in the future, not before the decision)                      |
+| Moved out                 | Moved in                             | The date, why, and where they went (settled home, other TA, left, other)   |
+| Cancelled                 | Held, confirmed, offered or accepted | A reason                                                                   |
+| Hold expired (worked out) | Held, at the hold's end              | Nothing is written: the property is simply free again                      |
+
+The planned end can be changed while the placement is live, with a reason, once the store has checked nobody else holds the property for the new dates. A refusal is recorded faithfully and goes to a manager to review; the product draws no conclusion from it about the council's duty.
+
+### No double bookings
+
+A held placement occupies its nights until the hold ends; a confirmed, offered or accepted one is booked; a household that has moved in occupies from its move-in date, with no end while it stays past the planned end. Refused, cancelled and expired placements free the dates. Nights are counted so that a household leaving on the 10th and one arriving on the 10th do not clash. The check runs in every search (the gate above) and again when the decision is recorded. The properties screen shows who holds or occupies each unit, by case reference, and until when; availability stays the supplier's statement.
+
+### Manager approval
+
+A decision with an exception is recorded as **awaiting approval** and the property is held. Provider confirmation, the offer and move-in wait until a team manager or the head of service, never the person who decided, approves (with reasons). A rejection before move-in releases the hold. For a household that cannot wait, the officer can mark it **placed out of hours, approval to follow**, with a reason: the placement goes ahead, the record says so prominently (and notes if it was used during working hours), and an urgent task goes to the managers, due 10:00 the next working day. The hold still ends while a decision waits, so an approval that is never given lets the property go.
+
+### Families in B&B or shared accommodation
+
+The placement page counts the days used against the six-week limit, from the move-in date (or the planned start until a move-in is recorded). Tasks follow the policy's ladder: a move-on review every week for the plan's owner; on day 28 the team manager; on day 35 urgent, a week left; on day 42 the head of service, and from day 43 the record shows the breach, worked out from the sealed dates.
+
+### Tasks
+
+Every warning that needs action becomes a task with an owner (a person or a role's queue), a due time and an escalation level worked out from the due time and now: due soon (24 hours before), overdue, then escalated to the manager after 2 days (to the head of service for a manager's task). Date-only deadlines fall due at 17:00 UK time. Working days are Monday to Friday; bank holidays are not in the demo.
+
+| Task                                         | Owner                       | Due                                                  |
+| -------------------------------------------- | --------------------------- | ---------------------------------------------------- |
+| s208 notice to the receiving council         | Deciding officer            | 14 days from the start                               |
+| s213AA notification, once consent is given   | Deciding officer            | 14 days from the start                               |
+| Ask for consent, when it was not asked       | Deciding officer            | 7 days from the start                                |
+| Confirm with the provider before a hold ends | Deciding officer            | The hold's end (appears 4 hours before)              |
+| Approve or reject an exception               | Team manager queue          | The hold's end; out of hours, 10:00 next working day |
+| Review a refusal                             | Team manager queue          | 17:00 the next working day                           |
+| Move-on reviews and the six-week ladder      | Plan owner, managers        | Days 7, 14, 21, 28, 35 and 42                        |
+| Planned stay or availability ending          | Deciding officer            | The end date (appears 14 days before)                |
+| Certificate expiring within 60 days          | Supply and compliance queue | The expiry date; urgent during a placement           |
+
+Completing a task needs evidence: what was done and a reference (a document, email or call). A manager can reassign a task with a note, or cancel it with a reason. An approval closes only by approving or rejecting. The household's 21-day review window is shown as information on the record, not as a task. Reminders are in the app only (counts in the menu and the due, overdue and escalated states): nobody is emailed until the hosted service exists.
+
+### Decisions recorded before placements were tracked
+
+A decision sealed by an earlier version has no hold or exceptions in it. It is read as a placement held from its decision time under the default policy, with no approval needed; usually that hold has long expired and the property is free. The record itself is not changed.

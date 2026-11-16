@@ -12,7 +12,7 @@ The officer accepts the recommendation or chooses another option with a reason. 
 
 ![Placement options for a family of four: recommendation, map and cost against suitability](docs/images/results.png)
 
-> **Status: MVP on synthetic data.** Every household, property, supplier, place and member of staff is invented. Sign-in is a labelled demo with no password: you choose who to be. Journey times are a labelled estimate and the housing benefit subsidy figures are illustrative. A solicitor should check the legal references before any pilot ([pilot readiness](docs/PILOT-READINESS.md)).
+> **Status: MVP on synthetic data.** Every household, property, supplier, place and member of staff is invented, and so is the demo history the app opens with. Sign-in is a labelled demo with no password: you choose who to be. There is no server: data lives in your browser, so two people on two devices do not see each other's bookings, and reminders are in the app only. Journey times are a labelled estimate and the housing benefit subsidy figures are illustrative. A solicitor should check the legal references before any pilot ([pilot readiness](docs/PILOT-READINESS.md)).
 
 ## Why
 
@@ -29,23 +29,36 @@ Since 5 February 2026, the automated-decision rules also require meaningful huma
 
 ## What it does
 
-|                                    |                                                                                                                                                                                                                                         |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Checks every property**          | Availability, size, access, safety certificates, approved supplier, safeguarding zones, affordability, and the rule against shared rooms for families. Each check cites its legal basis.                                                |
-| **Ranks what passes**              | A suitability score from factors the council weights: school, work, treatment and care journeys; location; facilities; condition; whether the property covers the whole stay. Each factor maps to the 2012 Suitability Order.           |
-| **Shows the real cost**            | The nightly charge minus the housing benefit subsidy the council can reclaim, plus any cost to other budgets (education transport) and to the family. Cost sits beside suitability, never inside it.                                    |
-| **Explains itself**                | Plain-English reasons, a map, cost against suitability, side-by-side comparison, and a check that the pick still holds if the policy weights move 20% either way. No AI computes or invents anything.                                   |
-| **Checks what is entered**         | Missing or impossible details stop the search with a summary that links to each field. A wheelchair user or a disability opens explicit access questions per person; every "yes" is checked, by name.                                   |
-| **Records the officer's decision** | Accept, or override with a reason code and the officer's own words. The signed-in officer is recorded, never a typed name. Consent to notify school and health services is recorded, never assumed. What they reviewed first is logged. |
-| **Seals the evidence**             | Canonical JSON snapshot in a SHA-256 hash chain; editing any past record breaks the chain. Later facts (a consent answer) are new records. Audit pack as a page and a PDF.                                                              |
-| **Knows who may do what**          | Officers search and decide; managers will approve exceptions; only the head of service (or admin) publishes policy; the auditor reads everything and changes nothing. Enforced in the store, not only by hiding buttons.                |
-| **Starts the statutory clocks**    | s208 notice to the receiving council, the 6-week limit for families in shared accommodation, s213AA school/GP notification, s202 review window, with draft notices.                                                                     |
-| **Keeps policy versioned**         | The council's weights and rules are published as signed, hashed versions with an equality note; every decision records the version it used.                                                                                             |
+|                                    |                                                                                                                                                                                                                                                           |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Checks every property**          | Availability, size, access, safety certificates, approved supplier, safeguarding zones, affordability, and the rule against shared rooms for families. Each check cites its legal basis.                                                                  |
+| **Ranks what passes**              | A suitability score from factors the council weights: school, work, treatment and care journeys; location; facilities; condition; whether the property covers the whole stay. Each factor maps to the 2012 Suitability Order.                             |
+| **Shows the real cost**            | The nightly charge minus the housing benefit subsidy the council can reclaim, plus any cost to other budgets (education transport) and to the family. Cost sits beside suitability, never inside it.                                                      |
+| **Explains itself**                | Plain-English reasons, a map, cost against suitability, side-by-side comparison, and a check that the pick still holds if the policy weights move 20% either way. No AI computes or invents anything.                                                     |
+| **Checks what is entered**         | Missing or impossible details stop the search with a summary that links to each field. A wheelchair user or a disability opens explicit access questions per person; every "yes" is checked, by name.                                                     |
+| **Records the officer's decision** | Accept, or override with a reason code and the officer's own words. The signed-in officer is recorded, never a typed name. Consent to notify school and health services is recorded, never assumed. What they reviewed first is logged.                   |
+| **Seals the evidence**             | Canonical JSON snapshot in a SHA-256 hash chain; editing any past record breaks the chain. Later facts (each booking step, an approval, a consent answer, a task done) are new records. Audit pack as a page and a PDF, telling the whole story in order. |
+| **Tracks the booking**             | Hold, provider confirmation, offer, acceptance or refusal, move-in and move-out, each recorded with who and when. A hold not confirmed in 24 hours lapses. A refusal is recorded in the household's words and goes to a manager.                          |
+| **Stops double bookings**          | A held, booked or occupied property is ruled out of every search for overlapping dates, with the dates and nothing about the other household. Recording a decision checks again at that moment.                                                           |
+| **Routes exceptions to a manager** | Overrides, out-of-area and shared-accommodation placements wait for a manager who did not make the decision. A family at the door at 2am can go ahead "out of hours, approval to follow", on the record.                                                  |
+| **Owns the six-week limit**        | A family in B&B or shared rooms needs an emergency reason and a move-on plan with a named owner; weekly reviews and escalation to the team manager and head of service as the limit nears; a day counter on the record.                                   |
+| **Turns warnings into tasks**      | Notices, consent follow-ups, certificates, holds, approvals, refusals and stays ending become tasks with an owner, a due time and escalation. Completing one needs evidence. Reminders are in the app only until there is a server.                       |
+| **Knows who may do what**          | Officers search, decide and act on placements; managers approve exceptions and reassign tasks; only the head of service (or admin) publishes policy; the auditor reads everything and changes nothing. Enforced in the store, not only by hiding buttons. |
+| **Starts the statutory clocks**    | s208 notice to the receiving council, the 6-week limit for families in shared accommodation, s213AA school/GP notification, s202 review window, with draft notices.                                                                                       |
+| **Keeps policy versioned**         | The council's weights and rules are published as signed, hashed versions with an equality note; every decision records the version it used.                                                                                                               |
 
 <table>
   <tr>
-    <td><img src="docs/images/overview.png" alt="Overview with summary figures, example households and deadlines" /></td>
+    <td><img src="docs/images/overview.png" alt="Overview with summary figures, example households, approvals waiting and my tasks" /></td>
+    <td><img src="docs/images/placement.png" alt="Placement page: a family placed out of hours, approval to follow, with the status stepper and the six-week counter" /></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/tasks.png" alt="Tasks screen with overdue and escalated tasks and the in-app reminders note" /></td>
+    <td><img src="docs/images/approvals.png" alt="Approvals queue for a manager" /></td>
+  </tr>
+  <tr>
     <td><img src="docs/images/property.png" alt="Property detail with factor-by-factor score and legal basis" /></td>
+    <td><img src="docs/images/compare.png" alt="Side-by-side comparison of options" /></td>
   </tr>
   <tr>
     <td><img src="docs/images/audit-pack.png" alt="Sealed audit pack" /></td>
@@ -57,7 +70,7 @@ Since 5 February 2026, the automated-decision rules also require meaningful huma
   </tr>
   <tr>
     <td><img src="docs/images/sign-in.png" alt="Demo sign-in with synthetic staff and a plain warning that it is not security" /></td>
-    <td><img src="docs/images/compare.png" alt="Side-by-side comparison of options" /></td>
+    <td><img src="docs/images/held-ruled-out.png" alt="A second search: the property held for another case is ruled out, with the time the hold ends" /></td>
   </tr>
 </table>
 
@@ -78,7 +91,9 @@ Sign in as one of the synthetic staff (an officer to search and decide; switch t
 | Two adults and five children, exam year         | Scarce four-bedroom supply. The cheap Luton unit would add about £33k of special-school taxi to the education budget.  |
 | Pregnant, alone, out of hours                   | Nothing self-contained tonight: shared rooms only as a last resort, with the six-week clock and remedy risk.           |
 
-Then record a decision (with the parent's consent answer), open the audit pack, and try **Audit log → Edit record #1 behind the system's back** to see tamper detection. To see the checks, open **New placement** and press **Find placements** on the blank form, or tick **Wheelchair user** on someone.
+The demo opens with some synthetic history already sealed, so you can see the booking flow at once: a family in B&B on day 31 of 42 with its move-on reviews, a family moved in at Ilford Gardens 9 (run the first example and that property is ruled out with its dates), and an officer's override waiting for a manager. Sign in as the team manager to approve it from **Approvals**, or work through **Tasks**.
+
+Then record a decision (with the parent's consent answer), take it through provider confirmation, the offer, move-in and move-out on its record, open the audit pack, and try **Audit log → Edit record #1 behind the system's back** to see tamper detection. Try the "Pregnant, alone, out of hours" example for a B&B placement with a move-on plan and "placed out of hours, approval to follow". To see the checks, open **New placement** and press **Find placements** on the blank form, or tick **Wheelchair user** on someone.
 
 Data saved by the earlier version in this browser is carried over: its sealed records still verify and show as recorded under the earlier version.
 
@@ -87,7 +102,7 @@ Data saved by the earlier version in this browser is carried over: its sealed re
 | Command               | Does                                                                                                                                                                 |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `npm run dev`         | Local dev server                                                                                                                                                     |
-| `npm test`            | Engine, scenario, validation, access, permission, consent, migration, store, audit, PDF and CSV tests (Vitest)                                                       |
+| `npm test`            | Engine, scenario, validation, access, permission, consent, placement, occupancy, task, lifecycle, demo history, migration, store, audit, PDF and CSV tests (Vitest)  |
 | `npm run check`       | Typecheck + tests + formatting (what CI runs)                                                                                                                        |
 | `npm run build`       | Production build (`dist/`)                                                                                                                                           |
 | `npm run build:demo`  | One self-contained HTML file (`dist-demo/index.html`) for a shareable click-through                                                                                  |
