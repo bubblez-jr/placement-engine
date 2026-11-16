@@ -1,0 +1,28 @@
+{
+  "format": "placement-household/1",
+  "source": { "system": "Example case system (synthetic)", "exported_at": "2026-11-16T09:20:00Z" },
+  "case_reference": "HN-26-0561",
+  "expected_stay_nights": 90,
+  "last_settled_area": { "label": "Stratford, Demo Borough", "lat": 51.542, "lng": 0.0 },
+  "members": [
+    { "ref": "A", "role": "adult", "age": 58, "sex": "M", "wheelchair_user": true, "partner_ref": "B" },
+    { "ref": "B", "role": "adult", "age": 55, "sex": "F", "partner_ref": "A" }
+  ],
+  "places": [
+    {
+      "person_ref": "A",
+      "kind": "medical",
+      "name": "Forest Road Medical Centre",
+      "reference": "ODS F90001 (synthetic)",
+      "lat": 51.548,
+      "lng": 0.028,
+      "arrive_by": "10:00",
+      "days_per_week": 1
+    },
+    { "person_ref": "B", "kind": "work", "name": "Retail job, Stratford centre", "postcode": "E15 1XX", "arrive_by": "09:00", "days_per_week": 5 }
+  ],
+  "priority_flags": ["disability", "caring_duties"],
+  "pets_must_be_accommodated": false,
+  "affordable_contribution_weekly": 10,
+  "notes": "SYNTHETIC EXAMPLE FILE: an invented household. The case system holds no access answers yet, so they must be asked before a search can run."
+}

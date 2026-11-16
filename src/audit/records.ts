@@ -1,6 +1,7 @@
 import {
   isDecisionV2,
   type ConsentRecord,
+  type ExportFormat,
   type EventFact,
   type IsoDateTime,
   type Property,
@@ -130,11 +131,15 @@ export function recordKind(r: ChainRecord): string {
       return `Task reassigned${about}`
     case 'task_cancelled':
       return `Task cancelled${about}`
+    case 'records_exported':
+      return p.event.format === 'placements_csv' ? 'Export of all placements' : `Export${about}`
   }
 }
 
 export function caseRefOf(r: ChainRecord): string {
-  return isDecisionSnapshot(r.snapshot) ? r.snapshot.search.household.caseRef : (r.snapshot.caseRef ?? 'Property task')
+  if (isDecisionSnapshot(r.snapshot)) return r.snapshot.search.household.caseRef
+  if (r.snapshot.caseRef) return r.snapshot.caseRef
+  return r.snapshot.event.type === 'records_exported' ? 'All placements' : 'Property task'
 }
 
 export function actorNameOf(r: ChainRecord): string {
@@ -155,6 +160,13 @@ export function isSeeded(r: ChainRecord): boolean {
   return r.snapshot.notes.some(n => n.startsWith(SEEDED_NOTE))
 }
 export const SEEDED_NOTE = 'Seeded demo history'
+
+export const EXPORT_FORMAT_LABEL: Record<ExportFormat, string> = {
+  decision_json: 'the sealed decision record as JSON',
+  case_note: 'a case note for the case system',
+  audit_pdf: 'the audit pack as a PDF',
+  placements_csv: 'the list of placements as CSV',
+}
 
 // ---------- Placements, approvals and tasks ----------
 
@@ -312,6 +324,8 @@ export function describeEvent(e: PlacementEvent): string {
       return `Task reassigned: ${b.title}, from ${ownerLabel(b.from)} to ${ownerLabel(b.to)}. Note: “${b.note}”`
     case 'task_cancelled':
       return `Task cancelled: ${b.title}. Reason: “${b.reason}”`
+    case 'records_exported':
+      return `Exported ${EXPORT_FORMAT_LABEL[b.format]}${b.records !== undefined ? ` (${b.records} placement${b.records === 1 ? '' : 's'})` : ''}, ${b.delivery === 'download' ? 'downloaded as a file' : 'copied to the clipboard'}. Content fingerprint ${b.contentSha256.slice(0, 16)}.`
   }
   return ''
 }

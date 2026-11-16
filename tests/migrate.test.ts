@@ -21,7 +21,10 @@ import { addHours } from '../src/engine/dates'
 import { occupancyOf } from '../src/engine/occupancy'
 import { isDecisionSnapshot } from '../src/audit/snapshot'
 import { STAFF } from '../src/data/staff'
-import { cmdDecide, cmdTransition, cmdUpdateConsent, type CommandCtx } from '../src/store/commands'
+import { cmdDecide, cmdExport, cmdTransition, cmdUpdateConsent, type CommandCtx } from '../src/store/commands'
+import { journeyView, subsidyOfSearch } from '../src/audit/provenance'
+import { caseNoteText, placementsCsv } from '../src/audit/exports'
+import { journeySourceOf } from '../src/engine/journeys'
 import { KEY_V1, KEY_V2, loadStored, migrate } from '../src/store/migrate'
 
 // tests/fixtures/schema1-localstorage.json was written by the main-branch (schema 1)
@@ -197,4 +200,33 @@ describe('decisions sealed before placements were tracked', () => {
     expect(describeEvent(e as never)).toBe('Consent changed: Consent given by Adult 2, by phone.')
     expect(recordKind(v2().chain[2])).toBe('Consent update for #2')
   })
+})
+
+describe('records made before phase 3 (no journey or subsidy provenance)', () => {
+  for (const [name, fixture] of [
+    ['schema 1', schema1],
+    ['schema 2 (phase 1)', schema2],
+  ] as const) {
+    it(`${name}: journeys read as the estimate, subsidy as illustrative, and every export builds`, async () => {
+      const d = migrate(structuredClone(fixture), NOW)!
+      const recs = decisionRecords(d.chain)
+      expect(recs.length).toBeGreaterThan(0)
+      for (const r of recs) {
+        const s = r.snapshot.search
+        expect(s.travelProvider.outcome).toBeUndefined()
+        const j = journeyView(s)
+        expect(j).toMatchObject({ legacy: true, outcome: 'estimated', tone: 'info' })
+        expect(s.candidates[0].journeys.every(x => journeySourceOf(x, s.travelProvider) === 'estimate')).toBe(true)
+        expect(subsidyOfSearch(s, r.snapshot.ruleset)).toMatchObject({ status: 'illustrative', label: 'Illustrative subsidy figures' })
+        const note = caseNoteText(d.chain, r, NOW)
+        expect(note).toContain(`CASE ${s.household.caseRef}`)
+        expect(note).toContain('Subsidy figures: Illustrative subsidy figures.')
+      }
+      for (const s of d.searches) expect(journeyView(s).legacy).toBe(true)
+      expect(placementsCsv(d.chain, NOW).rows).toBe(recs.filter(r => r.snapshot.decision.chosenPropertyId).length)
+      // An export appended to old data keeps the old records verifying.
+      const ex = await cmdExport(d, officer, { format: 'decision_json', seq: recs[0].seq, delivery: 'clipboard' })
+      expect(await verifyChain(ex.data.chain)).toEqual({ ok: true, checked: d.chain.length + 1 })
+    })
+  }
 })

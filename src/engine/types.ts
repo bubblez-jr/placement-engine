@@ -65,6 +65,27 @@ export interface Destination {
   /** Arrive-by time used for journey planning, HH:MM */
   arriveBy: string
   daysPerWeek: number
+  /**
+   * Where the place came from: a synthetic example from the demo list, a real
+   * location found from its postcode, or an imported file. Absent on places
+   * recorded before phase 3, which were all synthetic examples.
+   */
+  placeSource?: PlaceSource
+  /** The postcode it was located from, when it was */
+  postcode?: string
+}
+
+export type PlaceSource = 'example' | 'postcode' | 'import'
+
+/** Where a household's details came from, when they were imported rather than typed. */
+export interface HouseholdImportRecord {
+  format: 'placement-household/1'
+  /** The system that produced the file, as the file says */
+  system?: string
+  exportedAt?: string
+  /** The signed-in person who imported it, stamped by the store */
+  importedBy: ActorRef
+  importedAt: IsoDateTime
 }
 
 export type AccessNeed = 'step_free' | 'wheelchair_accessible' | 'ground_floor_or_lift' | 'adapted_bathroom'
@@ -121,6 +142,8 @@ export interface Household {
   /** Most the household can pay per week towards charges housing benefit does not cover */
   maxHouseholdContributionWeekly: number
   notes?: string
+  /** Set when the details were imported from a file (and then reviewed on the form) */
+  importedFrom?: HouseholdImportRecord
 }
 
 // ---------- Supply ----------
@@ -653,6 +676,9 @@ export type TransitionDetails =
   | { action: 'move_out'; movedOutOn: IsoDate; reason: string; destination: MoveOutDestination; destinationNote?: string }
   | { action: 'cancel'; reason: string }
 
+/** What can be exported. The decision formats are about one decision; the placements list is about all of them. */
+export type ExportFormat = 'decision_json' | 'case_note' | 'audit_pdf' | 'placements_csv'
+
 /** Who a task belongs to: a named person, or a role's shared queue. */
 export type TaskOwner = { kind: 'user'; userId: string; name: string; role: StaffRole } | { kind: 'role'; role: StaffRole }
 
@@ -678,6 +704,15 @@ export type PlacementEventBody =
   | { type: 'task_completed'; taskId: string; title: string; evidence: string; reference: string }
   | { type: 'task_reassigned'; taskId: string; title: string; from: TaskOwner; to: TaskOwner; note: string }
   | { type: 'task_cancelled'; taskId: string; title: string; reason: string }
+  | {
+      type: 'records_exported'
+      format: ExportFormat
+      delivery: 'download' | 'clipboard'
+      /** SHA-256 of exactly what left the system, so a copy can be matched to this record */
+      contentSha256: string
+      /** For the placements list: how many placements it held */
+      records?: number
+    }
 
 /** A sealed event as the engine sees it: who, when, what. */
 export interface EventFact {

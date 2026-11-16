@@ -58,6 +58,9 @@ export function validateHousehold(h: Household, today: IsoDate, context: Validat
   else if (!isRealDate(h.needFrom)) error('needFrom', 'Enter the date needed as a real date.')
   else if (h.needFrom < today) error('needFrom', 'The date needed cannot be in the past.')
 
+  const area = h.homeArea
+  if (!area || !Number.isFinite(area.lat) || !Number.isFinite(area.lng)) error('homeArea', 'Choose the last settled area.')
+
   if (!isWhole(h.expectedNights, 1, MAX_STAY_NIGHTS))
     error('expectedNights', `Enter the expected stay as a whole number of nights, from 1 to ${MAX_STAY_NIGHTS}.`)
 
@@ -94,6 +97,7 @@ export function validateHousehold(h: Household, today: IsoDate, context: Validat
     else if (!who) error(`who-${d.id}`, `Choose who goes to ${d.name}: the person chosen is no longer in the household.`)
     else if (d.kind === 'school' && who.role === 'adult')
       warning(`who-${d.id}`, `${d.name} is a school but is set against ${who.label}, an adult. Check who goes there.`)
+    if (!d.location || !Number.isFinite(d.location.lat) || !Number.isFinite(d.location.lng)) error(`place-${d.id}`, `Choose where ${d.name} is.`)
     if (typeof d.arriveBy !== 'string' || !TIME.test(d.arriveBy)) error(`arrive-${d.id}`, `Enter an arrive-by time for ${d.name}, for example 08:45.`)
     if (!isWhole(d.daysPerWeek, 1, 7)) error(`days-${d.id}`, `Enter how many days a week for ${d.name}, from 1 to 7.`)
   }

@@ -33,6 +33,7 @@ import { bnbLimitDays, placementPolicyOf } from '../engine/policy'
 import { runSearch } from '../engine/search'
 import { validateCancel, validateCompletion, validateReassign, type Task } from '../engine/tasks'
 import type {
+  Issue,
   DecisionTerms,
   DecisionV2,
   EmergencyReason,
@@ -47,6 +48,10 @@ import type {
 } from '../engine/types'
 import { ValidationError, type OpenCase } from '../engine/validate'
 import { brmaCounts, validateSubsidyImport, type SubsidyImportInput } from '../engine/subsidyTable'
+import { parseHouseholdImport, type HouseholdImport } from '../engine/householdImport'
+import { validateHousehold } from '../engine/validate'
+import { caseNoteText, decisionJson, exportFileName, placementsCsv } from '../audit/exports'
+import { sha256Hex } from '../audit/hash'
 import { STAFF } from '../data/staff'
 import type { TravelProvider } from '../travel/provider'
 import { activeRulesetOf, type AppData, type HashedRuleset, type ReviewLog } from './data'
@@ -111,16 +116,16 @@ function livePlacement(d: AppData, seq: number, now: IsoDateTime): { rec: Decisi
 async function appendEvent(
   d: AppData,
   ctx: CommandCtx,
-  about: { rec: DecisionRecord } | { propertyId: string },
+  about: { rec: DecisionRecord } | { propertyId: string } | null,
   body: PlacementEventBody,
 ): Promise<{ data: AppData; record: ChainRecord<PlacementEvent> }> {
   const event: PlacementEvent = {
     schema: 'placement-event/1',
     at: ctx.now,
     actor: actorRef(ctx.user!),
-    caseRef: 'rec' in about ? about.rec.snapshot.search.household.caseRef : null,
-    about: 'rec' in about ? { seq: about.rec.seq, rowHash: about.rec.rowHash } : null,
-    ...('propertyId' in about ? { propertyId: about.propertyId } : {}),
+    caseRef: about && 'rec' in about ? about.rec.snapshot.search.household.caseRef : null,
+    about: about && 'rec' in about ? { seq: about.rec.seq, rowHash: about.rec.rowHash } : null,
+    ...(about && 'propertyId' in about ? { propertyId: about.propertyId } : {}),
     event: body,
     notes: notesFor(ctx, [SYNTHETIC]),
   }
@@ -516,4 +521,71 @@ export function cmdUndoTamper(d: AppData, ctx: CommandCtx): AppData {
   if (!d.tamperBackup) return d
   const b = d.tamperBackup
   return { ...d, chain: d.chain.map(r => (r.seq === b.seq ? { ...r, snapshot: b.snapshot } : r)), tamperBackup: undefined }
+}
+
+// ---------- Council systems: import and export ----------
+
+/**
+ * Read a household file for the officer to review on the form. Changes no
+ * data and never searches: the officer presses "Find placements", and
+ * runSearch validates the household again then. Who imported it, and when,
+ * is stamped here from the session and travels with the household.
+ */
+export function cmdImportHousehold(d: AppData, ctx: CommandCtx, text: string): HouseholdImport & { issues: Issue[] } {
+  assertCan(ctx.user, 'import_household')
+  const r = parseHouseholdImport(text)
+  if (!r.household) return { ...r, issues: [] }
+  const household: Household = {
+    ...r.household,
+    importedFrom: {
+      format: 'placement-household/1',
+      ...(r.source.system ? { system: r.source.system } : {}),
+      ...(r.source.exportedAt ? { exportedAt: r.source.exportedAt } : {}),
+      importedBy: actorRef(ctx.user!),
+      importedAt: ctx.now,
+    },
+  }
+  return { ...r, household, issues: validateHousehold(household, ctx.today, { openCases: openCases(d, ctx.now) }) }
+}
+
+export type ExportRequest =
+  | { format: 'decision_json' | 'case_note'; seq: number; delivery: 'download' | 'clipboard' }
+  | { format: 'audit_pdf'; seq: number; delivery: 'download'; contentSha256: string }
+  | { format: 'placements_csv'; delivery: 'download' | 'clipboard' }
+
+/**
+ * Every export is recorded before it is handed over: who, when, what, how,
+ * and a SHA-256 fingerprint of exactly what left. The content is built here
+ * from sealed records, so nothing can be exported without its record. (The
+ * PDF is rendered in the browser; its fingerprint is passed in.)
+ */
+export async function cmdExport(
+  d: AppData,
+  ctx: CommandCtx,
+  req: ExportRequest,
+): Promise<{ data: AppData; record: ChainRecord<PlacementEvent>; content: string | null; fileName: string }> {
+  assertCan(ctx.user, 'export_records')
+  if (req.format === 'placements_csv') {
+    const { text, rows } = placementsCsv(d.chain, ctx.now)
+    const sealed = await appendEvent(d, ctx, null, {
+      type: 'records_exported',
+      format: req.format,
+      delivery: req.delivery,
+      contentSha256: await sha256Hex(text),
+      records: rows,
+    })
+    return { ...sealed, content: text, fileName: exportFileName(req.format, null, ctx.now) }
+  }
+  const rec = decisionAt(d, req.seq)
+  let content: string | null = null
+  let hash: string
+  if (req.format === 'audit_pdf') {
+    if (!/^[0-9a-f]{64}$/.test(req.contentSha256)) throw new Error('The PDF’s fingerprint is missing.')
+    hash = req.contentSha256
+  } else {
+    content = req.format === 'decision_json' ? decisionJson(rec) : caseNoteText(d.chain, rec, ctx.now)
+    hash = await sha256Hex(content)
+  }
+  const sealed = await appendEvent(d, ctx, { rec }, { type: 'records_exported', format: req.format, delivery: req.delivery, contentSha256: hash })
+  return { ...sealed, content, fileName: exportFileName(req.format, rec, ctx.now) }
 }

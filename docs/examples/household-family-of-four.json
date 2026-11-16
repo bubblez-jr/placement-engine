@@ -1,0 +1,43 @@
+{
+  "format": "placement-household/1",
+  "source": { "system": "Example case system (synthetic)", "exported_at": "2026-11-16T09:12:00Z" },
+  "case_reference": "HN-26-0555",
+  "date_needed": "2026-12-01",
+  "expected_stay_nights": 150,
+  "last_settled_area": { "label": "Manor Park, Demo Borough", "lat": 51.551, "lng": 0.04 },
+  "members": [
+    { "ref": "P1", "role": "adult", "age": 36, "sex": "F", "employed": true },
+    { "ref": "P2", "role": "child", "age": 12, "sex": "M" },
+    { "ref": "P3", "role": "child", "age": 8, "sex": "F" },
+    { "ref": "P4", "role": "child", "age": 3, "sex": "M" }
+  ],
+  "places": [
+    {
+      "person_ref": "P2",
+      "kind": "school",
+      "name": "Eastfield Academy",
+      "reference": "URN 900102 (synthetic)",
+      "lat": 51.539,
+      "lng": 0.005,
+      "arrive_by": "08:40",
+      "days_per_week": 5
+    },
+    {
+      "person_ref": "P3",
+      "kind": "school",
+      "name": "Mill Lane Primary School",
+      "reference": "URN 900103 (synthetic)",
+      "lat": 51.556,
+      "lng": 0.042,
+      "arrive_by": "08:45",
+      "days_per_week": 5
+    },
+    { "person_ref": "P1", "kind": "work", "name": "Care work, Ilford", "lat": 51.559, "lng": 0.071, "arrive_by": "10:00", "days_per_week": 4 }
+  ],
+  "priority_flags": [],
+  "pets_must_be_accommodated": false,
+  "affordable_contribution_weekly": 25,
+  "safeguarding_zones": [],
+  "reason_for_homelessness": "end_of_private_rented_tenancy",
+  "notes": "SYNTHETIC EXAMPLE FILE: an invented household for trying the import. Landlord sale; the family wants to keep both schools."
+}
