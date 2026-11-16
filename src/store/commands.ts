@@ -1,6 +1,7 @@
 import { appendRecord, type ChainRecord, type DecisionRecord } from '../audit/chain'
 import { approvalOf, currentConsent, decisionRecords, placementOf, placementsFrom, SEEDED_NOTE, tasksFrom } from '../audit/records'
 import { hashRuleset } from '../audit/ruleset'
+import { canonicalize } from '../audit/canonical'
 import { isDecisionSnapshot, type ChainPayload, type DecisionSnapshotV2, type PlacementEvent, type PlacementEventBody } from '../audit/snapshot'
 import { statutoryClocks } from '../engine/clocks'
 import { addDays, addHours, inWorkingHours, nextWorkingDayAt } from '../engine/dates'
@@ -45,6 +46,7 @@ import type {
   TaskOwner,
 } from '../engine/types'
 import { ValidationError, type OpenCase } from '../engine/validate'
+import { brmaCounts, validateSubsidyImport, type SubsidyImportInput } from '../engine/subsidyTable'
 import { STAFF } from '../data/staff'
 import type { TravelProvider } from '../travel/provider'
 import { activeRulesetOf, type AppData, type HashedRuleset, type ReviewLog } from './data'
@@ -412,8 +414,8 @@ export function nextVersion(v: string): string {
   return `${maj}.${(min ?? 0) + 1}`
 }
 
-export async function cmdPublishRuleset(d: AppData, ctx: CommandCtx, draft: Ruleset, equalityNote: string): Promise<{ data: AppData; ruleset: HashedRuleset }> {
-  assertCan(ctx.user, 'publish_policy')
+/** Seal a new policy version: the signed-in person signs it off, with an equality note. Shared by both publish routes. */
+async function publishVersion(d: AppData, ctx: CommandCtx, draft: Ruleset, equalityNote: string): Promise<{ data: AppData; ruleset: HashedRuleset }> {
   if (equalityNote.trim().length < EQUALITY_NOTE_MIN_CHARS)
     throw new ValidationError([
       {
@@ -432,6 +434,50 @@ export async function cmdPublishRuleset(d: AppData, ctx: CommandCtx, draft: Rule
     hash: undefined,
   })
   return { data: { ...d, rulesets: [...d.rulesets, next], activeVersion: next.version }, ruleset: next }
+}
+
+/**
+ * Publish changed weights and rules. The subsidy table is not changed this
+ * way: it changes only through `cmdPublishSubsidyTable`, with its checks and
+ * citation, so no edited draft can label figures as official.
+ */
+export async function cmdPublishRuleset(d: AppData, ctx: CommandCtx, draft: Ruleset, equalityNote: string): Promise<{ data: AppData; ruleset: HashedRuleset }> {
+  assertCan(ctx.user, 'publish_policy')
+  if (canonicalize(draft.subsidy) !== canonicalize(activeRulesetOf(d).subsidy))
+    throw new ValidationError([
+      { path: 'subsidy', severity: 'error', message: 'The subsidy table changes only by importing it, with its source: it cannot be edited here.' },
+    ])
+  return publishVersion(d, ctx, draft, equalityNote)
+}
+
+/**
+ * Load the official DWP January 2011 LHA table as a new signed policy
+ * version. The same checks as the preview run here, so a table that fails
+ * them is never published, whatever the screen did.
+ */
+export async function cmdPublishSubsidyTable(
+  d: AppData,
+  ctx: CommandCtx,
+  input: SubsidyImportInput & { equalityNote?: string },
+): Promise<{ data: AppData; ruleset: HashedRuleset }> {
+  assertCan(ctx.user, 'publish_policy')
+  const { issues, parsed } = validateSubsidyImport(input, ctx.today, brmaCounts(d.properties))
+  if (issues.some(i => i.severity === 'error') || !parsed?.table) throw new ValidationError(issues)
+  const active = activeRulesetOf(d)
+  const citation = input.citation!.trim()
+  const draft: Ruleset = {
+    ...active,
+    subsidy: {
+      ...active.subsidy,
+      lhaJan2011Weekly: parsed.table,
+      status: 'official',
+      citation,
+      sourceDate: input.sourceDate!,
+      loadedOn: ctx.today,
+      source: `Official DWP January 2011 LHA rates: ${citation} (dated ${input.sourceDate}), loaded on ${ctx.today} by ${ctx.user!.name}.`,
+    },
+  }
+  return publishVersion(d, ctx, draft, input.equalityNote ?? '')
 }
 
 export function cmdReplaceProperties(d: AppData, ctx: CommandCtx, props: Property[], mode: 'add' | 'replace'): AppData {

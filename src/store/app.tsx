@@ -10,6 +10,9 @@ import type { Placement, TransitionInput } from '../engine/placement'
 import type { Task } from '../engine/tasks'
 import type { Household, Property, Ruleset, SearchResult, TaskOwner } from '../engine/types'
 import { estimateProvider } from '../travel/estimate'
+import { createTravelTimeProvider } from '../travel/traveltime'
+import type { TravelProvider } from '../travel/provider'
+import { IS_DEMO_BUILD } from '../build'
 import {
   cmdConfirmAvailability,
   cmdDecide,
@@ -77,6 +80,13 @@ interface AppApi {
 }
 
 const Ctx = createContext<AppApi | null>(null)
+
+/**
+ * Journey times for officers' searches. The hosted site asks its own server
+ * (TravelTime when the keys are set, else the labelled estimate). The
+ * single-file demo never calls the network: always the estimate.
+ */
+const travel: TravelProvider = IS_DEMO_BUILD ? estimateProvider : createTravelTimeProvider({ fetch: (...a) => window.fetch(...a) })
 
 function searchId(): string {
   return `S-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
@@ -176,7 +186,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       activeRuleset: activeRulesetOf(data),
       openCases: openCases(data, now),
       async search(h) {
-        const { data: next, result } = await cmdSearch(current(), ctx(), h, { id: searchId(), travel: estimateProvider })
+        const { data: next, result } = await cmdSearch(current(), ctx(), h, { id: searchId(), travel })
         commit(next)
         return result
       },

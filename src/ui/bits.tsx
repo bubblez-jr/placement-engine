@@ -3,7 +3,7 @@ import type { Candidate, CriterionKey, CriterionScore, GateCheck, Issue } from '
 import { TIER_LABEL } from '../engine/scoring'
 import { Icon } from './icons'
 
-export const IS_DEMO_BUILD = import.meta.env.MODE === 'demo'
+export { IS_DEMO_BUILD } from '../build'
 
 export function gbp(n: number, dp = 0): string {
   const sign = n < 0 ? '−' : ''

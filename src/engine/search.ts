@@ -1,9 +1,10 @@
 import { bedroomNeed } from './bedrooms'
-import { costPlacement } from './cost'
+import { costPlacement, subsidyProvenance } from './cost'
 import { runGates } from './gates'
 import { effectiveWeights, locationTier, rescore, scoreCandidate, TIER_LABEL } from './scoring'
 import { buildExplanation } from './explain'
 import { validateHousehold, ValidationError, type ValidationContext } from './validate'
+import { journeyPlanningDate, journeyProvenance } from './journeys'
 import type { ActorRef, Candidate, CriterionKey, Household, IsoDate, JourneyResult, Property, Ruleset, SearchResult, SensitivityFlip, Supplier } from './types'
 import type { TravelProvider } from '../travel/provider'
 import type { OccupiedPeriod } from './occupancy'
@@ -58,15 +59,22 @@ export async function runSearch(input: SearchInput): Promise<SearchResult> {
   const weights = effectiveWeights(h, rs)
   const personLabel = (id: string) => h.members.find(m => m.id === id)?.label ?? id
 
-  // Journeys: every property to every household destination plus the home area.
-  const dests = [...h.destinations.map(d => ({ id: d.id, location: d.location })), { id: '__home', location: h.homeArea }]
-  const cells = await travel.matrix({
+  // Journeys: every property to every household destination, each with its own
+  // arrive-by time, plus the home area (arriving by 09:00) for the location tier.
+  // The day is worked out from the date needed, never from the clock.
+  const planningDate = journeyPlanningDate(h.needFrom)
+  const dests = [
+    ...h.destinations.map(d => ({ id: d.id, location: d.location, arriveBy: d.arriveBy })),
+    { id: '__home', location: h.homeArea, arriveBy: '09:00' },
+  ]
+  const { cells, run } = await travel.matrix({
     origins: properties.map(p => ({ id: p.id, location: p.location })),
     destinations: dests,
     mode: 'public_transport',
-    arriveBy: h.destinations[0]?.arriveBy ?? '09:00',
+    date: planningDate,
   })
-  const cell = (pid: string, did: string) => cells.find(c => c.originId === pid && c.destinationId === did)
+  const byPair = new Map(cells.map(c => [`${c.originId}|${c.destinationId}`, c]))
+  const cell = (pid: string, did: string) => byPair.get(`${pid}|${did}`)
 
   const candidates: Candidate[] = properties.map(p => {
     const supplier = suppliers.find(s => s.id === p.supplierId)
@@ -75,7 +83,15 @@ export async function runSearch(input: SearchInput): Promise<SearchResult> {
     const warnings = checks.filter(c => c.severity === 'warn')
     const journeys: JourneyResult[] = h.destinations.map(d => {
       const c = cell(p.id, d.id)
-      return { destinationId: d.id, personId: d.personId, kind: d.kind, name: d.name, minutes: c?.minutes ?? null, distanceKm: c?.distanceKm ?? 0 }
+      return {
+        destinationId: d.id,
+        personId: d.personId,
+        kind: d.kind,
+        name: d.name,
+        minutes: c?.minutes ?? null,
+        distanceKm: c?.distanceKm ?? 0,
+        source: c?.source ?? 'estimate',
+      }
     })
     const homeAreaMinutes = cell(p.id, '__home')?.minutes ?? null
     const tier = locationTier(p, rs, homeAreaMinutes)
@@ -157,12 +173,7 @@ export async function runSearch(input: SearchInput): Promise<SearchResult> {
     rulesetId: rs.id,
     rulesetVersion: rs.version,
     rulesetHash: rs.hash,
-    travelProvider: {
-      id: travel.id,
-      label: travel.label,
-      disclaimer: travel.disclaimer,
-      assumptions: `Public transport, arrive by ${h.destinations[0]?.arriveBy ?? '09:00'} on a term-time weekday`,
-    },
+    travelProvider: journeyProvenance(run, planningDate),
     bedroomNeed: need,
     effectiveWeights: weights,
     candidates,
@@ -174,6 +185,7 @@ export async function runSearch(input: SearchInput): Promise<SearchResult> {
     dataVersions: input.dataVersions,
     validation: issues,
     ...(input.searchedBy ? { searchedBy: input.searchedBy } : {}),
+    subsidy: subsidyProvenance(rs),
   }
   result.explanation = buildExplanation(result, rs)
   return result

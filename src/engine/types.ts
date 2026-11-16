@@ -185,6 +185,17 @@ export interface Property {
 
 // ---------- Rule-set (the council's placement policy, versioned) ----------
 
+export type SubsidyStatus = 'illustrative' | 'official'
+
+/** What a search records about the subsidy figures it used, so every screen and record says which they were. */
+export interface SubsidyProvenance {
+  status: SubsidyStatus
+  /** "Illustrative subsidy figures" or "Official subsidy table" */
+  label: string
+  /** Where the figures came from */
+  detail: string
+}
+
 export type CriterionKey =
   | 'school_journey'
   | 'work_journey'
@@ -245,6 +256,16 @@ export interface Ruleset {
     lhaJan2011Weekly: Record<string, Record<'1' | '2' | '3' | '4', number>>
     /** Where the figures came from, shown on screen */
     source: string
+    /**
+     * Whether the table is the official DWP one, loaded from a cited file by
+     * the head of service, or illustrative. Absent on versions published
+     * before phase 3: read as illustrative (`subsidyStatusOf`).
+     */
+    status?: SubsidyStatus
+    /** Official tables only: the document the figures came from, its date, and the day it was loaded */
+    citation?: string
+    sourceDate?: IsoDate
+    loadedOn?: IsoDate
   }
   schoolTransport: {
     /** Who pays for a child's travel to their existing school after a move */
@@ -313,8 +334,47 @@ export interface JourneyResult {
   personId: string
   kind: DestinationKind
   name: string
+  /** null = no public transport route found within the search limit */
   minutes: number | null
   distanceKm: number
+  /** Where this journey's time came from. Absent on searches recorded before phase 3 (read from the search's provider). */
+  source?: JourneySource
+}
+
+/** Where a journey time came from: TravelTime's timetable-based routing, or the straight-line estimate. */
+export type JourneySource = 'traveltime' | 'estimate'
+
+/** Why real journey times were not used, in whole or in part. */
+export type TravelFailureCode =
+  | 'not_configured'
+  | 'status_unavailable'
+  | 'invalid_request'
+  | 'bad_key'
+  | 'rate_limited'
+  | 'timeout'
+  | 'network'
+  | 'rejected'
+  | 'vendor_error'
+  | 'bad_response'
+  | 'partial'
+
+/**
+ * What a search records about its journeys. The first four fields are all a
+ * search recorded before phase 3 (always the estimate); the rest say which
+ * source produced the times, whether it fell back to the estimate and why,
+ * and the day planned for.
+ */
+export interface JourneyProvenance {
+  id: string
+  label: string
+  disclaimer: string
+  assumptions: string
+  requested?: 'traveltime' | 'estimate'
+  outcome?: 'measured' | 'estimated' | 'mixed'
+  fallback?: { code: TravelFailureCode; message: string; pairs: number } | null
+  /** The term-time weekday journeys were planned for (YYYY-MM-DD) */
+  planningDate?: IsoDate
+  counts?: { measured: number; estimated: number; noRoute: number }
 }
 
 export interface CriterionScore {
@@ -399,7 +459,7 @@ export interface SearchResult {
   rulesetId: string
   rulesetVersion: string
   rulesetHash: string
-  travelProvider: { id: string; label: string; disclaimer: string; assumptions: string }
+  travelProvider: JourneyProvenance
   bedroomNeed: number
   effectiveWeights: Record<CriterionKey, number>
   candidates: Candidate[]
@@ -413,6 +473,8 @@ export interface SearchResult {
   validation?: Issue[]
   /** Who ran the search. Absent in schema-1 records. */
   searchedBy?: ActorRef
+  /** Which subsidy figures the costs used. Absent on searches before phase 3 (read from the policy version: `subsidyOfSearch`). */
+  subsidy?: SubsidyProvenance
 }
 
 /** A problem with entered or imported data. `path` is the form control id the officer fixes it in. */

@@ -1,7 +1,36 @@
 import { money } from './valueFns'
 import { sharedFacilities } from './gates'
 import { isFamilyHousehold } from './bedrooms'
-import type { CostBreakdown, CostLine, Household, JourneyResult, Property, Ruleset } from './types'
+import type { CostBreakdown, CostLine, Household, JourneyResult, Property, Ruleset, SubsidyProvenance, SubsidyStatus } from './types'
+
+/**
+ * Official only when the table was loaded as official with its citation and
+ * dates. Anything else, including every policy version published before
+ * phase 3, is illustrative.
+ */
+export function subsidyStatusOf(rs: Pick<Ruleset, 'subsidy'>): SubsidyStatus {
+  const s = rs.subsidy
+  return s.status === 'official' && !!s.citation?.trim() && !!s.sourceDate && !!s.loadedOn ? 'official' : 'illustrative'
+}
+
+export const SUBSIDY_STATUS_LABEL: Record<SubsidyStatus, string> = {
+  illustrative: 'Illustrative subsidy figures',
+  official: 'Official subsidy table',
+}
+
+/** What the costs say about the subsidy figures behind them. */
+export function subsidyProvenance(rs: Pick<Ruleset, 'subsidy'>): SubsidyProvenance {
+  const status = subsidyStatusOf(rs)
+  const s = rs.subsidy
+  return {
+    status,
+    label: SUBSIDY_STATUS_LABEL[status],
+    detail:
+      status === 'official'
+        ? `January 2011 LHA rates from ${s.citation!.trim()}, dated ${s.sourceDate}, loaded on ${s.loadedOn}. The caps and the 90% rate are the council’s policy settings.`
+        : `${s.source.replace(/\s*$/, '')} These figures are not the official table: treat subsidy and net costs as examples.`,
+  }
+}
 
 /** School days per calendar night: 5 days a week, 39 term weeks a year. */
 export const SCHOOL_DAYS_PER_NIGHT = (5 / 7) * (39 / 52)
@@ -16,7 +45,8 @@ export function subsidyPerNight(p: Property, rs: Ruleset): { perNight: number; b
   const size = sharedFacilities(p) ? 1 : Math.min(4, Math.max(1, p.bedrooms))
   const table = rs.subsidy.lhaJan2011Weekly[p.brma]
   const lha = table?.[String(size) as '1' | '2' | '3' | '4']
-  if (lha === undefined) return { perNight: 0, basis: `No January 2011 LHA rate loaded for ${p.brma}; subsidy counted as £0` }
+  const tag = subsidyStatusOf(rs) === 'official' ? 'Official table' : 'Illustrative figures'
+  if (lha === undefined) return { perNight: 0, basis: `${tag}: no January 2011 LHA rate loaded for ${p.brma}; subsidy counted as £0` }
   const cap = rs.subsidy.innerLondonBrmas.includes(p.brma) ? rs.subsidy.weeklyCapInnerLondon : rs.subsidy.weeklyCapElsewhere
   const weeklyCharge = p.nightlyCharge * 7
   const byRate = rs.subsidy.rate * lha
@@ -25,7 +55,7 @@ export function subsidyPerNight(p: Property, rs: Ruleset): { perNight: number; b
     weekly === weeklyCharge ? 'the charge' : weekly === cap ? `the £${cap}/week cap` : `${Math.round(rs.subsidy.rate * 100)}% of the Jan 2011 LHA rate`
   return {
     perNight: money(weekly / 7),
-    basis: `${p.brma}, ${size}-bed rate${sharedFacilities(p) ? ' (shared facilities: one-bed rate)' : ''}: £${lha.toFixed(2)}/week × ${Math.round(
+    basis: `${tag}: ${p.brma}, ${size}-bed rate${sharedFacilities(p) ? ' (shared facilities: one-bed rate)' : ''}: £${lha.toFixed(2)}/week × ${Math.round(
       rs.subsidy.rate * 100,
     )}% = £${byRate.toFixed(2)}/week; limited by ${limiter}`,
   }
@@ -77,10 +107,10 @@ export function costPlacement(h: Household, p: Property, rs: Ruleset, journeys: 
         unit: 'school day',
         stayTotal: money(perDay * schoolDaysInStay),
         basis: child.send
-          ? `SEND taxi, ${j.distanceKm} km × 2 × £${st.sendTaxiPerKm.toFixed(2)}/km (${st.budgetHolder})`
+          ? `SEND taxi, ${j.distanceKm} km × 2 × £${st.sendTaxiPerKm.toFixed(2)}/km (the council’s own assumption; ${st.budgetHolder})`
           : londonFree
             ? 'Under-16s travel free on London buses'
-            : `Bus fare £${st.busFarePerChildDay.toFixed(2)}/day (${st.budgetHolder})`,
+            : `Bus fare £${st.busFarePerChildDay.toFixed(2)}/day (the council’s own assumption; ${st.budgetHolder})`,
       })
     } else if (j.minutes > 20 && !londonFree) {
       lines.push({
@@ -92,8 +122,8 @@ export function costPlacement(h: Household, p: Property, rs: Ruleset, journeys: 
         stayTotal: money(st.busFarePerChildDay * schoolDaysInStay),
         basis:
           st.funding === 'family'
-            ? 'Council policy: the family pays travel to an existing school'
-            : `Journey under ${st.fundIfMinutesOver} min: the family pays`,
+            ? `Council policy: the family pays travel to an existing school (bus fare £${st.busFarePerChildDay.toFixed(2)}/day, the council’s own assumption)`
+            : `Journey under ${st.fundIfMinutesOver} min: the family pays (bus fare £${st.busFarePerChildDay.toFixed(2)}/day, the council’s own assumption)`,
       })
     }
   }

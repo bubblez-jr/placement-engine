@@ -59,7 +59,7 @@ describe('subsidy', () => {
     const x = { ...props.find(x => x.id === 'P01')!, brma: 'Nowhere' }
     const s = subsidyPerNight(x, rs)
     expect(s.perNight).toBe(0)
-    expect(s.basis).toMatch(/No January 2011 LHA rate/)
+    expect(s.basis).toMatch(/no January 2011 LHA rate/i)
   })
 })
 

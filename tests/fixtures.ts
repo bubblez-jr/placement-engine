@@ -17,7 +17,7 @@ export async function searchHousehold(household: Household, id = 'S-TEST', extra
     properties: seedProperties(TODAY, NOW),
     suppliers: SUPPLIERS,
     ruleset,
-    travel: estimateProvider,
+    travel: extra.travel ?? estimateProvider,
     now: NOW,
     dataVersions: { properties: 'test', reference: 'test' },
     id,

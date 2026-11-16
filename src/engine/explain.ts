@@ -1,4 +1,5 @@
-import type { Candidate, CriterionKey, CriterionScore, Explanation, GateCode, Ruleset, SearchResult } from './types'
+import type { Candidate, CriterionKey, CriterionScore, Explanation, GateCode, Ruleset, SearchResult, SubsidyStatus } from './types'
+import { subsidyStatusOf } from './cost'
 
 // Plain-English explanations built from templates. The numbers come from the
 // engine; nothing here computes a score. (A language model may later reword
@@ -62,15 +63,16 @@ function joinAnd(xs: string[]): string {
 }
 
 /** Cost sentences comparing a to b, split by budget holder. */
-export function costComparison(a: Candidate, b: Candidate): string[] {
+export function costComparison(a: Candidate, b: Candidate, subsidy: SubsidyStatus = 'illustrative'): string[] {
   const out: string[] = []
+  const after = subsidy === 'official' ? 'After housing benefit subsidy (official table)' : 'After housing benefit subsidy (illustrative figures)'
   const diff = a.cost.taNetPerNight - b.cost.taNetPerNight
   const stayDiff = a.cost.taBudgetStay - b.cost.taBudgetStay
   if (Math.abs(diff) < 0.5) {
-    out.push(`After housing benefit subsidy, ${a.label} and ${b.label} cost the temporary accommodation budget about the same per night.`)
+    out.push(`${after}, ${a.label} and ${b.label} cost the temporary accommodation budget about the same per night.`)
   } else {
     out.push(
-      `After housing benefit subsidy, ${a.label} costs the temporary accommodation budget ${gbp(Math.abs(diff))} a night ${diff > 0 ? 'more' : 'less'} than ${b.label} (${gbp(
+      `${after}, ${a.label} costs the temporary accommodation budget ${gbp(Math.abs(diff))} a night ${diff > 0 ? 'more' : 'less'} than ${b.label} (${gbp(
         Math.abs(stayDiff),
       )} over the expected ${a.cost.stayNights}-night stay).`,
     )
@@ -160,13 +162,13 @@ export function buildExplanation(r: SearchResult, rs: Ruleset): Explanation {
     reasons.push(
       `It scores ${rec.score}/100 for suitability, within ${rs.costTieBreakBand} points of ${top.label} (${top.score}). The council's rule is that public cost decides between options this close, and ${rec.label} costs less.`,
     )
-    cost = costComparison(rec, top)
+    cost = costComparison(rec, top, subsidyStatusOf(rs))
   } else {
     const diffs = biggestDifferences(rec, runnerUp)
     reasons.push(
       `It scores ${rec.score}/100 for suitability against ${runnerUp.score} for ${runnerUp.label}, the next option.${diffs.length ? ` The biggest differences are ${joinAnd(diffs)}.` : ''}`,
     )
-    cost = costComparison(rec, runnerUp)
+    cost = costComparison(rec, runnerUp, subsidyStatusOf(rs))
   }
 
   for (const w of rec.warnings) if (w.code !== 'SHARED_FACILITIES_FAMILY') caveats.push(w.message)
@@ -179,6 +181,9 @@ export function buildExplanation(r: SearchResult, rs: Ruleset): Explanation {
       `Close call: the recommendation changes if some weights move by 20% (${r.sensitivity.flips.length} of the tested changes). Check the next option carefully.`,
     )
   }
+  if (subsidyStatusOf(rs) === 'illustrative')
+    cost.push('The housing benefit subsidy figures are illustrative, not the official table, so every net cost here is an example.')
+  else cost.push(`Subsidy uses the official January 2011 LHA table loaded on ${rs.subsidy.loadedOn} (${rs.subsidy.citation}).`)
   return { headline: `${rec.label} is recommended.`, reasons, cost, caveats }
 }
 

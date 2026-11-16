@@ -1,4 +1,5 @@
 import type { ComplianceItem, Property, UnitType } from '../engine/types'
+import { splitCsvLine as splitLine } from '../engine/csvLine'
 
 // CSV import for the council's own stock or an export from its booking
 // platform. One row per unit, keyed on UPRN. Certificates are given as
@@ -39,28 +40,6 @@ export const CSV_COLUMNS = [
 ] as const
 
 const UNIT_TYPES: UnitType[] = ['self_contained_nightly', 'psl', 'council_hostel', 'annex_shared', 'bnb']
-
-function splitLine(line: string): string[] {
-  const out: string[] = []
-  let cur = ''
-  let q = false
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i]
-    if (q) {
-      if (ch === '"' && line[i + 1] === '"') {
-        cur += '"'
-        i++
-      } else if (ch === '"') q = false
-      else cur += ch
-    } else if (ch === '"') q = true
-    else if (ch === ',') {
-      out.push(cur)
-      cur = ''
-    } else cur += ch
-  }
-  out.push(cur)
-  return out.map(s => s.trim())
-}
 
 const bool = (v: string) => /^(y|yes|true|1)$/i.test(v)
 const date = (v: string) => (/^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined)

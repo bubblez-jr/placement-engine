@@ -1,9 +1,10 @@
 import { haversineKm } from '../engine/geo'
-import type { TravelCell, TravelProvider, TravelQuery } from './provider'
+import type { TravelCell, TravelMatrix, TravelProvider, TravelQuery } from './provider'
 
 /**
  * Demo-only journey estimate from straight-line distance. It is deliberately
- * simple and labelled everywhere it appears. Replace before any pilot.
+ * simple and labelled everywhere it appears. It is also the fallback whenever
+ * TravelTime is not switched on or fails.
  *
  * Public transport: walk if under ~1.5 km and quicker; otherwise 8 min to get
  * to a stop + 5 min wait + in-vehicle time on a road distance of 1.3× the
@@ -25,21 +26,27 @@ export function estimateDriveMinutes(km: number): number {
   return Math.round(4 + (road / speed) * 60)
 }
 
+/** The estimate for every pair in a query. */
+export function estimateCells(q: TravelQuery): TravelCell[] {
+  const out: TravelCell[] = []
+  for (const o of q.origins) {
+    for (const d of q.destinations) {
+      const km = haversineKm(o.location, d.location)
+      const minutes =
+        q.mode === 'drive' ? estimateDriveMinutes(km) : q.mode === 'walk' ? Math.round(((km * 1.25) / 4.8) * 60) : estimatePublicTransportMinutes(km)
+      out.push({ originId: o.id, destinationId: d.id, minutes, distanceKm: Math.round(km * 10) / 10, source: 'estimate' })
+    }
+  }
+  return out
+}
+
 export const estimateProvider: TravelProvider = {
   id: 'estimate-v1',
   label: 'Estimated journey times (demo model)',
   disclaimer:
     'Journey times are estimated from straight-line distance for this demo. A pilot uses timetable-based times (TravelTime or a self-hosted r5 router on bus and rail timetables).',
-  async matrix(q: TravelQuery): Promise<TravelCell[]> {
-    const out: TravelCell[] = []
-    for (const o of q.origins) {
-      for (const d of q.destinations) {
-        const km = haversineKm(o.location, d.location)
-        const minutes =
-          q.mode === 'drive' ? estimateDriveMinutes(km) : q.mode === 'walk' ? Math.round(((km * 1.25) / 4.8) * 60) : estimatePublicTransportMinutes(km)
-        out.push({ originId: o.id, destinationId: d.id, minutes, distanceKm: Math.round(km * 10) / 10 })
-      }
-    }
-    return out
+  async matrix(q: TravelQuery): Promise<TravelMatrix> {
+    const cells = estimateCells(q)
+    return { cells, run: { requested: 'estimate', fallback: null, counts: { measured: 0, estimated: cells.length, noRoute: 0 } } }
   },
 }

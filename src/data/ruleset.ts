@@ -120,6 +120,7 @@ export function defaultRuleset(signedAt: string): Ruleset {
         Chelmsford: { '1': 140, '2': 175, '3': 215, '4': 275 },
       },
       source: 'ILLUSTRATIVE figures for the demo. Load the DWP January 2011 LHA table and current subsidy caps before real use.',
+      status: 'illustrative',
     },
     schoolTransport: {
       funding: 'council_discretionary',
