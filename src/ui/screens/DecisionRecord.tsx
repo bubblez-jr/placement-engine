@@ -1,10 +1,17 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../../store/app'
 import { useNav } from '../../store/nav'
+import { useUser } from '../../auth/session'
 import { daysBetween, formatDate, formatDateTime, toIsoDate } from '../../engine/dates'
+import { hasChildren, validateConsent, type ConsentInput } from '../../engine/decision'
+import { check } from '../../engine/permissions'
+import { ValidationError } from '../../engine/validate'
+import type { Issue } from '../../engine/types'
 import { shortHash } from '../../audit/hash'
+import { clocksNow, consentAtDecision as consentAtDecisionOf, currentConsent, decisionRecords, deciderOf, type ConsentView } from '../../audit/records'
 import { OVERRIDE_REASONS } from './Decide'
-import { PageHeader, Section } from '../bits'
+import { ErrorSummary, NotAllowed, PageHeader, Section } from '../bits'
+import { ConsentFields, ConsentText } from '../consent'
 
 function CopyBox({ id, text }: { id: string; text: string }) {
   const [state, setState] = useState<'idle' | 'copied' | 'select'>('idle')
@@ -35,12 +42,101 @@ function CopyBox({ id, text }: { id: string; text: string }) {
   )
 }
 
+/** Whether the s213AA notice can be drafted, from consent as it stands now. */
+function noticeBlockedBy(v: ConsentView): string | null {
+  if (v.kind === 'record' && v.consent.status === 'given') return null
+  if (v.kind === 'legacy' && v.consented) return null
+  if (v.kind === 'record' && v.consent.status === 'refused') return `Consent was refused by ${v.consent.givenBy}, so no notice is drafted.`
+  if (v.kind === 'legacy') return 'No notice is drafted. Ask a parent and record what they say below: the notice is drafted if they agree.'
+  return 'Consent has not been asked yet. Record it below once you have asked, and the notice is drafted if they agree.'
+}
+
+function UpdateConsent({ seq, household }: { seq: number; household: Parameters<typeof ConsentFields>[0]['household'] }) {
+  const { updateConsent } = useApp()
+  const user = useUser()
+  const [open, setOpen] = useState(false)
+  const [value, setValue] = useState<ConsentInput>({})
+  const [issues, setIssues] = useState<Issue[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState<number | null>(null)
+  const summaryRef = useRef<HTMLDivElement>(null)
+  const [focus, setFocus] = useState(0)
+  useEffect(() => {
+    if (focus) summaryRef.current?.focus()
+  }, [focus])
+  const allowed = check(user, 'record_consent')
+  if (!allowed.ok) return <NotAllowed reason={allowed.reason} className="mt-3" />
+  if (!open)
+    return (
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <button id="update-consent" type="button" className="btn" onClick={() => setOpen(true)}>
+          Record a change to consent
+        </button>
+        {done && <span className="text-sm text-good">Saved as record #{done}. The decision record is unchanged.</span>}
+      </div>
+    )
+  return (
+    <form
+      className="mt-4 grid gap-3 rounded-lg border border-rule p-3 sm:p-4"
+      noValidate
+      onSubmit={async e => {
+        e.preventDefault()
+        setError(null)
+        const found = validateConsent(value, household)
+        setIssues(found)
+        if (found.length) return setFocus(n => n + 1)
+        setBusy(true)
+        try {
+          const rec = await updateConsent(seq, value)
+          setDone(rec.seq)
+          setOpen(false)
+          setValue({})
+        } catch (err) {
+          if (err instanceof ValidationError) {
+            setIssues(err.issues)
+            setFocus(n => n + 1)
+          } else setError((err as Error).message)
+        } finally {
+          setBusy(false)
+        }
+      }}
+    >
+      <p className="text-sm text-muted">This adds a new sealed record that points to this decision. The decision itself is never edited.</p>
+      <ErrorSummary ref={summaryRef} issues={issues} />
+      <ConsentFields
+        household={household}
+        value={value}
+        onChange={v => (setValue(v), issues.length && setIssues(validateConsent(v, household)))}
+        issues={issues}
+      />
+      {error && (
+        <p role="alert" className="text-bad">
+          {error}
+        </p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <button type="submit" className="btn btn-primary" disabled={busy}>
+          {busy ? 'Sealing…' : 'Save consent'}
+        </button>
+        <button type="button" className="btn" onClick={() => (setOpen(false), setIssues([]))}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  )
+}
+
 export function DecisionRecord({ seq }: { seq: number }) {
   const { data } = useApp()
   const { go } = useNav()
-  const r = data.chain.find(x => x.seq === seq)
+  const r = decisionRecords(data.chain).find(x => x.seq === seq)
   if (!r) return <p>Decision #{seq} not found.</p>
-  const { search, decision: d, clocks, ruleset, properties } = r.snapshot
+  const { search, decision: d, ruleset, properties } = r.snapshot
+  const clocks = clocksNow(data.chain, r)
+  const by = deciderOf(r.snapshot)
+  const consent = currentConsent(data.chain, r)
+  const consentApplies = !!d.chosenPropertyId && hasChildren(search.household)
   const chosen = search.candidates.find(c => c.propertyId === d.chosenPropertyId)
   const prop = properties.find(p => p.id === d.chosenPropertyId)
   const rec = search.candidates.find(c => c.propertyId === search.recommendedId)
@@ -62,19 +158,20 @@ Accommodation made available from: ${formatDate(d.startDate)}
 Function: interim / main housing duty (confirm from the case)
 Our reference: ${search.household.caseRef}
 
-Contact: ${d.officer}, ${d.officerRole}, ${ruleset.councilName}`
+Contact: ${by.name}, ${by.roleLabel}, ${ruleset.councilName}`
       : null
 
+  const blocked = noticeBlockedBy(consent.now)
   const s213 =
-    prop && children.length > 0 && d.consentToNotifyServices
+    prop && consentApplies && !blocked
       ? `To: the children's school(s), GP practice and health visitor
 Notification of a temporary accommodation placement (Housing Act 1996 s213AA)
 
-With the parent's consent, ${ruleset.councilName} tells you that the family has been placed in temporary accommodation from ${formatDate(d.startDate)}.
+With the parent's consent${consent.now.kind === 'record' ? ` (${consent.now.consent.givenBy}, recorded ${formatDate(consent.now.consent.recordedAt)})` : ''}, ${ruleset.councilName} tells you that the family has been placed in temporary accommodation from ${formatDate(d.startDate)}.
 Schools: ${[...new Set(search.household.destinations.filter(x => x.kind === 'school').map(x => x.name))].join('; ') || 'none recorded'}
 New address: ${prop.address}
 Our reference: ${search.household.caseRef}
-Contact: ${d.officer}, ${ruleset.councilName}`
+Contact: ${by.name}, ${ruleset.councilName}`
       : null
 
   return (
@@ -114,7 +211,8 @@ Contact: ${d.officer}, ${ruleset.councilName}`
           <div>
             <dt className="eyebrow">Decided by</dt>
             <dd className="mt-1">
-              {d.officer}, {d.officerRole}
+              {by.name}, {by.roleLabel}
+              {!by.signedIn && <span className="block text-xs text-muted">Name typed on the form (earlier version, before sign-in)</span>}
             </dd>
           </div>
           <div>
@@ -152,11 +250,18 @@ Contact: ${d.officer}, ${ruleset.councilName}`
                     <tr key={c.key}>
                       <td className="num whitespace-nowrap">
                         {formatDate(c.due)}
-                        <div className={`text-xs ${days < 0 ? 'text-bad' : days <= 3 ? 'text-warn' : 'text-muted'}`}>
-                          {days < 0 ? `${-days} days overdue` : days === 0 ? 'today' : `in ${days} days`}
-                        </div>
+                        {c.status === 'done' ? (
+                          <div className="text-xs text-good">No longer needed</div>
+                        ) : (
+                          <div className={`text-xs ${days < 0 ? 'text-bad' : days <= 3 ? 'text-warn' : 'text-muted'}`}>
+                            {days < 0 ? `${-days} days overdue` : days === 0 ? 'today' : `in ${days} days`}
+                          </div>
+                        )}
                       </td>
-                      <td>{c.label}</td>
+                      <td>
+                        {c.status === 'done' ? <s className="text-muted">{c.label}</s> : c.label}
+                        {c.status === 'done' && <span className="chip chip-good ml-2">Done</span>}
+                      </td>
                       <td className="text-sm text-muted">{c.basis}</td>
                     </tr>
                   )
@@ -164,6 +269,24 @@ Contact: ${d.officer}, ${ruleset.councilName}`
               </tbody>
             </table>
           </div>
+        </Section>
+      )}
+
+      {consentApplies && (
+        <Section title="Consent to notify school, GP and health visitor" id="consent">
+          <ConsentText view={consent.now} />
+          {consent.updates.length > 0 && (
+            <ul className="mt-3 grid gap-1 border-t border-rule pt-3 text-sm text-muted">
+              {consent.updates.map(u => (
+                <li key={u.seq}>
+                  Record #{u.seq}: changed by {u.consent.recordedBy.name}, {formatDateTime(u.consent.recordedAt)}
+                </li>
+              ))}
+              <li>At the decision: {d.chosenPropertyId ? <ConsentText view={consentAtDecisionOf(r.snapshot)} /> : null}</li>
+            </ul>
+          )}
+          {blocked && <p className="mt-3 rounded-md bg-sunken p-3 text-sm">{blocked}</p>}
+          <UpdateConsent seq={r.seq} household={search.household} />
         </Section>
       )}
 

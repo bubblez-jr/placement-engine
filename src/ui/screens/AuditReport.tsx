@@ -7,6 +7,9 @@ import type { ChainCheck } from '../../audit/chain'
 import { TIER_LABEL } from '../../engine/scoring'
 import { BUDGET_LABEL, CRITERIA_ORDER, UNIT_LABEL } from '../criteria'
 import { OVERRIDE_REASONS } from './Decide'
+import { clocksNow, consentAtDecision, consentSummary, currentConsent, decisionRecords, deciderOf, eventsAbout, recordKind } from '../../audit/records'
+import { AccessAnswers } from '../accessView'
+import { ConsentText } from '../consent'
 import { gbp, IS_DEMO_BUILD } from '../bits'
 import { Icon } from '../icons'
 
@@ -28,9 +31,13 @@ export function AuditReport({ seq }: { seq: number }) {
   useEffect(() => {
     verify().then(setCheck)
   }, [verify, data.chain])
-  const r = data.chain.find(x => x.seq === seq)
-  if (!r) return <p>Record #{seq} not found.</p>
-  const { search: s, decision: d, ruleset: rs, clocks, properties } = r.snapshot
+  const r = decisionRecords(data.chain).find(x => x.seq === seq)
+  if (!r) return <p>Decision record #{seq} not found.</p>
+  const { search: s, decision: d, ruleset: rs, properties } = r.snapshot
+  const clocks = clocksNow(data.chain, r)
+  const by = deciderOf(r.snapshot)
+  const consent = currentConsent(data.chain, r)
+  const later = eventsAbout(data.chain, r.seq)
   const eligible = s.candidates.filter(c => c.eligible).sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
   const rejected = s.candidates.filter(c => !c.eligible)
   const chosen = s.candidates.find(c => c.propertyId === d.chosenPropertyId)
@@ -44,7 +51,7 @@ export function AuditReport({ seq }: { seq: number }) {
     setPdfBusy(true)
     try {
       const { renderAuditPdf } = await import('../../pdf/AuditPdf')
-      downloadBlob(`placement-decision-${r!.seq}-${s.household.caseRef}.pdf`, await renderAuditPdf(r!))
+      downloadBlob(`placement-decision-${r!.seq}-${s.household.caseRef}.pdf`, await renderAuditPdf(r!, data.chain))
     } finally {
       setPdfBusy(false)
     }
@@ -135,9 +142,36 @@ export function AuditReport({ seq }: { seq: number }) {
             <tr>
               <td className="text-muted">Decided by</td>
               <td>
-                {d.officer}, {d.officerRole}, {formatDateTime(d.decidedAt)}
+                {by.name}, {by.roleLabel}, {formatDateTime(d.decidedAt)}
+                <div className="text-xs text-muted">
+                  {by.signedIn
+                    ? 'From the signed-in session (demo sign-in, no password).'
+                    : 'Name typed on the form under the earlier version, before sign-in.'}
+                </div>
               </td>
             </tr>
+            {s.searchedBy && (
+              <tr>
+                <td className="text-muted">Search run by</td>
+                <td>
+                  {s.searchedBy.name}, {formatDateTime(s.createdAt)}
+                </td>
+              </tr>
+            )}
+            {consentAtDecision(r.snapshot).kind !== 'not_applicable' && (
+              <tr>
+                <td className="text-muted">Consent to notify school, GP and health visitor</td>
+                <td>
+                  <ConsentText view={consent.now} />
+                  {consent.updates.length > 0 && (
+                    <div className="mt-1 text-xs text-muted">
+                      Changed after the decision in record{consent.updates.length === 1 ? '' : 's'} {consent.updates.map(u => `#${u.seq}`).join(', ')}. At the
+                      decision: {consentSummary(consentAtDecision(r.snapshot))}.
+                    </div>
+                  )}
+                </td>
+              </tr>
+            )}
             {d.outcome === 'override' && (
               <tr>
                 <td className="text-muted">Recommended instead</td>
@@ -173,8 +207,7 @@ export function AuditReport({ seq }: { seq: number }) {
         <h2>2. Household needs</h2>
         <p className="mt-2 text-sm">
           Needed from {formatDate(s.household.needFrom)} for about {s.household.expectedNights} nights. Last settled area: {s.household.homeAreaLabel}. Bedroom
-          need: {s.bedroomNeed}. Must-haves: {s.household.accessNeeds.length ? s.household.accessNeeds.join(', ').replaceAll('_', ' ') : 'none'}
-          {s.household.petsMustBeAccommodated ? '; pet or assistance dog' : ''}. Priority flags:{' '}
+          need: {s.bedroomNeed}. {s.household.petsMustBeAccommodated ? 'A pet must be accommodated. ' : ''}Priority flags:{' '}
           {s.household.flags.length ? s.household.flags.join(', ').replaceAll('_', ' ') : 'none'}. Safeguarding exclusion zones:{' '}
           {s.household.safeguardingZones.length} (details restricted). Affordable charges: {gbp(s.household.maxHouseholdContributionWeekly)}/week.
         </p>
@@ -211,6 +244,20 @@ export function AuditReport({ seq }: { seq: number }) {
           </table>
         </div>
         {s.household.notes && <p className="mt-2 text-sm">Notes: {s.household.notes}</p>}
+        <h3>Access needs</h3>
+        <div className="mt-1">
+          <AccessAnswers household={s.household} />
+        </div>
+        {s.validation && s.validation.length > 0 && (
+          <>
+            <h3>Warnings shown when the search ran</h3>
+            <ul className="mt-1 list-disc pl-5 text-sm">
+              {s.validation.map((w, i) => (
+                <li key={i}>{w.message}</li>
+              ))}
+            </ul>
+          </>
+        )}
 
         <h2>3. Policy applied</h2>
         <p className="mt-2 text-sm">
@@ -361,7 +408,23 @@ export function AuditReport({ seq }: { seq: number }) {
           </>
         )}
 
-        <h2>9. Method, data and seal</h2>
+        {later.length > 0 && (
+          <>
+            <h2>9. Later records about this decision</h2>
+            <p className="mt-2 text-sm text-muted">Each is its own sealed record in the chain. This decision record is never edited.</p>
+            <ul className="mt-1 grid gap-1 text-sm">
+              {later.map(e => (
+                <li key={e.seq}>
+                  <b className="num">#{e.seq}</b> {formatDateTime(e.snapshot.at)}, {e.snapshot.actor.name} ({e.snapshot.actor.roleLabel.toLowerCase()}):{' '}
+                  {e.snapshot.event.type === 'consent_updated' ? consentSummary({ kind: 'record', consent: e.snapshot.event.consent }) : recordKind(e)}
+                  <span className="hash block break-all text-muted">{e.rowHash}</span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        <h2>{later.length > 0 ? 10 : 9}. Method, data and seal</h2>
         <ul className="mt-2 grid gap-1 text-sm">
           <li>
             Journeys: {s.travelProvider.label}. {s.travelProvider.assumptions}. {s.travelProvider.disclaimer}

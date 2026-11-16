@@ -1,5 +1,7 @@
 import { Document, Page, pdf, StyleSheet, Text, View } from '@react-pdf/renderer'
-import type { ChainRecord } from '../audit/chain'
+import type { ChainRecord, DecisionRecord } from '../audit/chain'
+import { clocksNow, consentAtDecision, consentSummary, currentConsent, deciderOf, eventsAbout, recordKind } from '../audit/records'
+import { ACCESS_QUESTIONS, effectiveAccessNeeds, needSentence, subjectLabel } from '../engine/access'
 import { formatDate, formatDateTime } from '../engine/dates'
 import { TIER_LABEL } from '../engine/scoring'
 
@@ -32,8 +34,14 @@ function KV({ k, v }: { k: string; v: string }) {
   )
 }
 
-function AuditDoc({ r }: { r: ChainRecord }) {
-  const { search: s, decision: d, ruleset: rs, clocks, properties } = r.snapshot
+function AuditDoc({ r, chain }: { r: DecisionRecord; chain: ChainRecord[] }) {
+  const { search: s, decision: d, ruleset: rs, properties } = r.snapshot
+  const clocks = clocksNow(chain, r)
+  const by = deciderOf(r.snapshot)
+  const consent = currentConsent(chain, r)
+  const later = eventsAbout(chain, r.seq)
+  const h = s.household
+  const needs = effectiveAccessNeeds(h)
   const eligible = s.candidates.filter(c => c.eligible).sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
   const rejected = s.candidates.filter(c => !c.eligible)
   const chosen = s.candidates.find(c => c.propertyId === d.chosenPropertyId)
@@ -58,7 +66,16 @@ function AuditDoc({ r }: { r: ChainRecord }) {
         />
         <KV k="Placement" v={chosen && prop ? `${chosen.label}, ${prop.address}` : '—'} />
         <KV k="Starts" v={chosen ? formatDate(d.startDate) : '—'} />
-        <KV k="Decided by" v={`${d.officer}, ${d.officerRole}, ${formatDateTime(d.decidedAt)}`} />
+        <KV
+          k="Decided by"
+          v={`${by.name}, ${by.roleLabel}, ${formatDateTime(d.decidedAt)}. ${by.signedIn ? 'From the signed-in session (demo sign-in, no password).' : 'Name typed on the form under the earlier version, before sign-in.'}`}
+        />
+        {consentAtDecision(r.snapshot).kind !== 'not_applicable' && (
+          <KV
+            k="Consent to notify"
+            v={`${consentSummary(consent.now)}${consent.now.kind === 'record' ? `. Recorded by ${consent.now.consent.recordedBy.name}, ${formatDateTime(consent.now.consent.recordedAt)}` : ''}${consent.updates.length ? `. Changed after the decision (record ${consent.updates.map(u => `#${u.seq}`).join(', ')}); at the decision: ${consentSummary(consentAtDecision(r.snapshot))}` : ''}`}
+          />
+        )}
         {d.outcome === 'override' && <KV k="Recommended instead" v={rec?.label ?? ''} />}
         {d.reasonText ? <KV k={d.outcome === 'no_suitable' ? 'Search steps' : 'Officer’s words'} v={`“${d.reasonText}”`} /> : null}
         <KV
@@ -71,6 +88,22 @@ function AuditDoc({ r }: { r: ChainRecord }) {
           Needed from {formatDate(s.household.needFrom)} for about {s.household.expectedNights} nights. Last settled area: {s.household.homeAreaLabel}. Bedroom
           need: {s.bedroomNeed}. Safeguarding exclusion zones: {s.household.safeguardingZones.length} (details restricted).
         </Text>
+        <Text>Access checks applied: {needs.length ? needs.map(needSentence).join('; ') : 'none'}.</Text>
+        {(h.accessAssessments ?? []).map(a => (
+          <KV
+            key={a.subject}
+            k={`Access answers: ${subjectLabel(h, a.subject)}`}
+            v={`${ACCESS_QUESTIONS.map(q => `${q.question}: ${a.answers[q.key] ?? 'not answered'}`).join('; ')}. Answered by ${a.answeredBy?.name ?? 'not recorded'}${a.answeredAt ? `, ${formatDateTime(a.answeredAt)}` : ''}${a.note ? `. Note: ${a.note}` : ''}`}
+          />
+        ))}
+        {(h.accessNeeds ?? []).length > 0 && (
+          <Text>Recorded for the whole household under the earlier version: {h.accessNeeds.join(', ').replaceAll('_', ' ')}.</Text>
+        )}
+        {(s.validation ?? []).map((w, i) => (
+          <Text key={`w${i}`} style={st.small}>
+            Warning when searched: {w.message}
+          </Text>
+        ))}
         {s.household.members.map(m => (
           <KV
             key={m.id}
@@ -166,7 +199,20 @@ function AuditDoc({ r }: { r: ChainRecord }) {
           </>
         )}
 
-        <Text style={st.h2}>9. Method and seal</Text>
+        {later.length > 0 && (
+          <>
+            <Text style={st.h2}>9. Later records about this decision</Text>
+            {later.map(e => (
+              <KV
+                key={e.seq}
+                k={`#${e.seq} ${formatDateTime(e.snapshot.at)}`}
+                v={`${e.snapshot.actor.name}: ${e.snapshot.event.type === 'consent_updated' ? consentSummary({ kind: 'record', consent: e.snapshot.event.consent }) : recordKind(e)}. Hash ${e.rowHash}`}
+              />
+            ))}
+          </>
+        )}
+
+        <Text style={st.h2}>{later.length > 0 ? 10 : 9}. Method and seal</Text>
         <Text>
           {s.travelProvider.label}. {s.travelProvider.assumptions}. {s.travelProvider.disclaimer}
         </Text>
@@ -185,6 +231,6 @@ function AuditDoc({ r }: { r: ChainRecord }) {
   )
 }
 
-export async function renderAuditPdf(r: ChainRecord): Promise<Blob> {
-  return pdf(<AuditDoc r={r} />).toBlob()
+export async function renderAuditPdf(r: DecisionRecord, chain: ChainRecord[]): Promise<Blob> {
+  return pdf(<AuditDoc r={r} chain={chain} />).toBlob()
 }
