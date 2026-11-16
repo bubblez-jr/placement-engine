@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import schema1 from './fixtures/schema1-localstorage.json'
 import { verifyChain } from '../src/audit/chain'
 import { clocksNow, consentAtDecision, consentSummary, currentConsent, decisionRecords, deciderOf, recordKind } from '../src/audit/records'
 import { isDecisionSnapshot } from '../src/audit/snapshot'
@@ -10,7 +10,7 @@ import { KEY_V1, KEY_V2, loadStored, migrate } from '../src/store/migrate'
 // tests/fixtures/schema1-localstorage.json was written by the main-branch (schema 1)
 // code: seed() and decide() exactly as the live demo ran them. It holds two
 // sealed decisions (consent ticked and unticked) and an open search.
-const raw = () => JSON.parse(readFileSync(new URL('./fixtures/schema1-localstorage.json', import.meta.url), 'utf8'))
+const raw = () => structuredClone(schema1) as Record<string, any>
 const NOW = '2026-11-16T09:00:00.000Z'
 const officer: CommandCtx = { user: STAFF.find(s => s.id === 'u-ta-2')!, now: NOW, today: '2026-11-16' }
 
