@@ -1,18 +1,25 @@
 import { canonicalize } from './canonical'
 import { sha256Hex } from './hash'
-import type { DecisionSnapshot } from './snapshot'
+import type { ChainPayload, DecisionSnapshot } from './snapshot'
 
 export const GENESIS = '0'.repeat(64)
 
-export interface ChainRecord {
+/**
+ * One sealed record. The payload is a decision snapshot or a later event; it
+ * keeps the key `snapshot` from schema 1 so old records and exports still read
+ * the same way. The hash covers the payload's value, not the key name.
+ */
+export interface ChainRecord<P extends ChainPayload = ChainPayload> {
   seq: number
   prevHash: string
   /** SHA-256 of `seq|prevHash|canonical(snapshot)` */
   rowHash: string
-  snapshot: DecisionSnapshot
+  snapshot: P
 }
 
-async function hashRow(seq: number, prevHash: string, snapshot: DecisionSnapshot): Promise<string> {
+export type DecisionRecord = ChainRecord<DecisionSnapshot>
+
+async function hashRow(seq: number, prevHash: string, snapshot: ChainPayload): Promise<string> {
   return sha256Hex(`${seq}|${prevHash}|${canonicalize(snapshot)}`)
 }
 
@@ -22,7 +29,7 @@ async function hashRow(seq: number, prevHash: string, snapshot: DecisionSnapshot
  * runs in an insert-only Postgres table, with the latest hash copied daily to
  * write-once storage.
  */
-export async function appendRecord(chain: ChainRecord[], snapshot: DecisionSnapshot): Promise<ChainRecord> {
+export async function appendRecord<P extends ChainPayload>(chain: ChainRecord[], snapshot: P): Promise<ChainRecord<P>> {
   const prev = chain[chain.length - 1]
   const seq = prev ? prev.seq + 1 : 1
   const prevHash = prev ? prev.rowHash : GENESIS

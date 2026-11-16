@@ -3,3 +3,4 @@ dist-demo
 node_modules
 screenshots
 package-lock.json
+tests/fixtures/*.json
