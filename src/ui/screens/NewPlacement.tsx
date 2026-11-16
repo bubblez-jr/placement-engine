@@ -1,38 +1,36 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../../store/app'
 import { useNav } from '../../store/nav'
+import { useUser } from '../../auth/session'
 import { SCENARIOS } from '../../data/households'
 import { AREAS, PLACES, PLACE_KIND_LABEL } from '../../data/places'
+import { ACCESS_NEED_LABEL, ACCESS_QUESTIONS, HOUSEHOLD_SUBJECT, requiredAccessSubjects, subjectLabel } from '../../engine/access'
 import { bedroomNeed } from '../../engine/bedrooms'
-import { toIsoDate } from '../../engine/dates'
-import type { AccessNeed, Household, Person, PriorityFlag } from '../../engine/types'
-import { PageHeader, Section } from '../bits'
-
-const ACCESS: [AccessNeed, string][] = [
-  ['step_free', 'Step-free access'],
-  ['wheelchair_accessible', 'Wheelchair accessible'],
-  ['ground_floor_or_lift', 'Ground floor or lift'],
-  ['adapted_bathroom', 'Adapted bathroom'],
-]
+import { formatDateTime, toIsoDate } from '../../engine/dates'
+import { actorRef, check } from '../../engine/permissions'
+import { CASE_REF_MAX, MAX_STAY_NIGHTS, validateHousehold, ValidationError } from '../../engine/validate'
+import type { AccessAssessment, AccessQuestion, Household, Issue, Person, PriorityFlag, YesNo } from '../../engine/types'
+import { ErrorSummary, Field, FieldError, fieldA11y, NotAllowed, NumberInput, PageHeader, Section, WarningList } from '../bits'
 
 const FLAGS: [PriorityFlag, string, string][] = [
   ['child_protection_plan', 'Child protection plan', 'raises location and support'],
   ['ongoing_treatment', 'Ongoing medical treatment', 'raises the treatment journey'],
   ['caring_duties', 'Caring duties', 'raises the care journey'],
   ['domestic_abuse', 'Domestic abuse', 'raises support; add an exclusion zone below'],
-  ['disability', 'Disability', 'raises the treatment journey'],
+  ['disability', 'Disability', 'raises the treatment journey and asks the access questions above'],
 ]
 
-function blankHousehold(): Household {
+function blankHousehold(today: string): Household {
   return {
-    caseRef: `HN-26-${String(Math.floor(500 + Math.random() * 400)).padStart(4, '0')}`,
-    members: [{ id: 'a1', label: 'Adult 1', role: 'adult', age: 30, sex: 'F' }],
+    caseRef: '',
+    members: [{ id: 'a1', label: 'Adult 1', role: 'adult', age: NaN, sex: 'F' }],
     destinations: [],
     homeArea: AREAS[0].location,
     homeAreaLabel: AREAS[0].label,
-    needFrom: toIsoDate(new Date()),
+    needFrom: today,
     expectedNights: 120,
     accessNeeds: [],
+    accessAssessments: [],
     petsMustBeAccommodated: false,
     flags: [],
     safeguardingZones: [],
@@ -50,56 +48,119 @@ function relabel(members: Person[]): Person[] {
 let uid = 100
 const nextId = (p: string) => `${p}${++uid}`
 
+/** Keep only the access answers for people still in the household, or still needed by the household flag. */
+function pruneAssessments(h: Household): Household {
+  const ids = new Set(h.members.map(m => m.id))
+  const required = new Set(requiredAccessSubjects(h))
+  return {
+    ...h,
+    accessAssessments: (h.accessAssessments ?? []).filter(a => (a.subject === HOUSEHOLD_SUBJECT ? required.has(HOUSEHOLD_SUBJECT) : ids.has(a.subject))),
+  }
+}
+
 export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string; fromSearchId?: string }) {
-  const { search, getSearch } = useApp()
+  const { search, getSearch, openCases } = useApp()
+  const user = useUser()
   const { go } = useNav()
+  const today = toIsoDate(new Date())
   const initial = useMemo(() => {
     if (fromSearchId) {
       const s = getSearch(fromSearchId)
-      if (s) return structuredClone(s.household)
+      if (s) return { ...structuredClone(s.household), accessAssessments: s.household.accessAssessments ?? [] }
     }
     const sc = SCENARIOS.find(s => s.id === scenarioId)
-    return sc ? sc.household(toIsoDate(new Date())) : blankHousehold()
-  }, [scenarioId, fromSearchId, getSearch])
+    return sc ? sc.household(today) : blankHousehold(today)
+  }, [scenarioId, fromSearchId, getSearch, today])
   const [h, setH] = useState<Household>(initial)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const need = bedroomNeed(h.members)
+  /** Errors show after the first submit, then update live as fields are corrected. */
+  const [showErrors, setShowErrors] = useState(false)
+  const [focusSummary, setFocusSummary] = useState(0)
+  const summaryRef = useRef<HTMLDivElement>(null)
+  const agesKnown = h.members.length > 0 && h.members.every(m => Number.isInteger(m.age) && m.age >= 0)
+  const need = agesKnown ? bedroomNeed(h.members) : null
   const scenario = SCENARIOS.find(s => s.id === scenarioId)
+  const allowed = check(user, 'run_search')
 
-  const set = (patch: Partial<Household>) => setH(x => ({ ...x, ...patch }))
+  const allIssues = useMemo(() => validateHousehold(h, today, { openCases }), [h, today, openCases])
+  const issues: Issue[] = showErrors ? allIssues : allIssues.filter(i => i.severity === 'warning')
+  const errorCount = allIssues.filter(i => i.severity === 'error').length
+
+  useEffect(() => {
+    if (focusSummary) summaryRef.current?.focus()
+  }, [focusSummary])
+
+  const set = (patch: Partial<Household>) => setH(x => pruneAssessments({ ...x, ...patch }))
   const setMember = (id: string, patch: Partial<Person>) => set({ members: h.members.map(m => (m.id === id ? { ...m, ...patch } : m)) })
+
+  function answer(subject: string, q: AccessQuestion, v: YesNo) {
+    const now = new Date().toISOString()
+    const list = h.accessAssessments ?? []
+    const existing = list.find(a => a.subject === subject)
+    const next: AccessAssessment = {
+      ...(existing ?? { subject, answers: {} }),
+      answers: { ...existing?.answers, [q]: v },
+      answeredBy: actorRef(user),
+      answeredAt: now,
+    }
+    set({ accessAssessments: existing ? list.map(a => (a.subject === subject ? next : a)) : [...list, next] })
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
-    if (h.members.length === 0) return setError('Add at least one person to the household.')
-    if (h.expectedNights < 1) return setError('Expected stay must be at least one night.')
+    if (errorCount > 0) {
+      // A failed submit never runs a search: show every error and move focus to the summary.
+      setShowErrors(true)
+      setFocusSummary(n => n + 1)
+      return
+    }
     setBusy(true)
     try {
       const r = await search(h)
       go({ view: 'results', searchId: r.id })
     } catch (err) {
-      setError(`The search could not run: ${(err as Error).message}`)
+      if (err instanceof ValidationError) {
+        setShowErrors(true)
+        setFocusSummary(n => n + 1)
+      } else setError(`The search could not run: ${(err as Error).message}`)
     } finally {
       setBusy(false)
     }
   }
 
+  const subjects = [...new Set([...requiredAccessSubjects(h), ...(h.accessAssessments ?? []).map(a => a.subject)])]
+  const placeName = (id: string) => h.destinations.find(d => d.id === id)?.name ?? 'this place'
+
   return (
-    <form className="grid gap-5" onSubmit={submit} noValidate>
+    <form className="grid gap-5" onSubmit={submit} noValidate aria-describedby={scenario ? 'scenario-summary' : undefined}>
       <PageHeader eyebrow="New placement" title={scenario ? scenario.title : 'Household needs'}>
-        {scenario
-          ? `${scenario.summary} Change anything below, then find placements.`
-          : 'Record what the placement has to work for. Only pseudonymous details: the case system holds names and contact details.'}
+        <span id="scenario-summary">
+          {scenario
+            ? `${scenario.summary} This is an invented example household. Change anything below, then find placements.`
+            : 'Record what the placement has to work for. Only pseudonymous details: the case system holds names and contact details.'}
+        </span>
       </PageHeader>
+
+      {!allowed.ok && <NotAllowed reason={allowed.reason} className="callout" />}
+      {showErrors && <ErrorSummary ref={summaryRef} issues={issues} />}
+      <WarningList
+        issues={issues}
+        onLink={l => (l.seq ? go({ view: 'decision', seq: l.seq }) : l.searchId ? go({ view: 'results', searchId: l.searchId }) : undefined)}
+      />
 
       <Section title="Case">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="field">
-            <span>Case reference</span>
-            <input id="caseRef" className="input" value={h.caseRef} onChange={e => set({ caseRef: e.target.value })} />
-          </label>
+          <Field id="caseRef" label="Case reference" hint={`From the case system, up to ${CASE_REF_MAX} characters`} issues={issues}>
+            <input
+              {...fieldA11y('caseRef', issues, 'caseRef-hint')}
+              className="input"
+              value={h.caseRef}
+              autoComplete="off"
+              onChange={e => set({ caseRef: e.target.value })}
+            />
+          </Field>
           <label className="field">
             <span>Last settled area</span>
             <select
@@ -119,32 +180,37 @@ export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string
               ))}
             </select>
           </label>
-          <label className="field">
-            <span>Needed from</span>
-            <input id="needFrom" type="date" className="input" value={h.needFrom} onChange={e => set({ needFrom: e.target.value })} />
-          </label>
-          <label className="field">
-            <span>Expected stay (nights)</span>
-            <input
-              id="expectedNights"
-              type="number"
+          <Field id="needFrom" label="Needed from" issues={issues}>
+            <input {...fieldA11y('needFrom', issues)} type="date" className="input" value={h.needFrom} onChange={e => set({ needFrom: e.target.value })} />
+          </Field>
+          <Field id="expectedNights" label="Expected stay (nights)" issues={issues}>
+            <NumberInput
+              {...fieldA11y('expectedNights', issues)}
               min={1}
+              max={MAX_STAY_NIGHTS}
               className="input num"
               value={h.expectedNights}
-              onChange={e => set({ expectedNights: Number(e.target.value) })}
+              onValue={n => set({ expectedNights: n })}
             />
-          </label>
+          </Field>
         </div>
       </Section>
 
       <Section
         title="Household"
         aside={
-          <span className="chip chip-accent">
-            Needs {need} bedroom{need === 1 ? '' : 's'}
-          </span>
+          need === null ? (
+            <span className="chip chip-plain">Bedroom need: enter every age</span>
+          ) : (
+            <span className="chip chip-accent">
+              Needs {need} bedroom{need === 1 ? '' : 's'}
+            </span>
+          )
         }
       >
+        <div id="members" tabIndex={-1} className="grid gap-1">
+          <FieldError id="members" issues={issues} />
+        </div>
         <div className="scroll-x">
           <table className="table min-w-[760px]">
             <thead>
@@ -162,16 +228,18 @@ export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string
                 <tr key={m.id}>
                   <td className="font-bold">{m.label}</td>
                   <td>
-                    <input
+                    <NumberInput
+                      {...fieldA11y(`age-${m.id}`, issues)}
                       aria-label={`${m.label} age`}
-                      id={`age-${m.id}`}
-                      type="number"
                       min={0}
-                      max={110}
+                      max={120}
                       className="input num w-20"
                       value={m.age}
-                      onChange={e => setMember(m.id, { age: Number(e.target.value) })}
+                      onValue={n => setMember(m.id, { age: n })}
                     />
+                    <div className="mt-1 max-w-56">
+                      <FieldError id={`age-${m.id}`} issues={issues} />
+                    </div>
                   </td>
                   <td>
                     <select
@@ -188,37 +256,42 @@ export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string
                   </td>
                   <td>
                     {m.role === 'adult' ? (
-                      <select
-                        aria-label={`${m.label} partner`}
-                        id={`partner-${m.id}`}
-                        className="input w-28"
-                        value={m.partnerOf ?? ''}
-                        onChange={e => {
-                          const pid = e.target.value || undefined
-                          set({
-                            members: h.members.map(x =>
-                              x.id === m.id
-                                ? { ...x, partnerOf: pid }
-                                : x.id === pid
-                                  ? { ...x, partnerOf: m.id }
-                                  : x.partnerOf === m.id
-                                    ? { ...x, partnerOf: undefined }
-                                    : x,
-                            ),
-                          })
-                        }}
-                      >
-                        <option value="">None</option>
-                        {h.members
-                          .filter(x => x.role === 'adult' && x.id !== m.id)
-                          .map(x => (
-                            <option key={x.id} value={x.id}>
-                              {x.label}
-                            </option>
-                          ))}
-                      </select>
+                      <>
+                        <select
+                          {...fieldA11y(`partner-${m.id}`, issues)}
+                          aria-label={`${m.label} partner`}
+                          className="input w-28"
+                          value={m.partnerOf ?? ''}
+                          onChange={e => {
+                            const pid = e.target.value || undefined
+                            set({
+                              members: h.members.map(x =>
+                                x.id === m.id
+                                  ? { ...x, partnerOf: pid }
+                                  : x.id === pid
+                                    ? { ...x, partnerOf: m.id }
+                                    : x.partnerOf === m.id
+                                      ? { ...x, partnerOf: undefined }
+                                      : x,
+                              ),
+                            })
+                          }}
+                        >
+                          <option value="">None</option>
+                          {h.members
+                            .filter(x => x.role === 'adult' && x.id !== m.id)
+                            .map(x => (
+                              <option key={x.id} value={x.id}>
+                                {x.label}
+                              </option>
+                            ))}
+                        </select>
+                        <div className="mt-1 max-w-56">
+                          <FieldError id={`partner-${m.id}`} issues={issues} />
+                        </div>
+                      </>
                     ) : (
-                      <span className="text-faint">—</span>
+                      <span className="text-faint">None</span>
                     )}
                   </td>
                   <td>
@@ -249,11 +322,11 @@ export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string
                       onClick={() =>
                         set({
                           members: relabel(h.members.filter(x => x.id !== m.id).map(x => (x.partnerOf === m.id ? { ...x, partnerOf: undefined } : x))),
-                          destinations: h.destinations.filter(d => d.personId !== m.id),
+                          destinations: h.destinations.map(d => (d.personId === m.id ? { ...d, personId: '' } : d)),
                         })
                       }
                     >
-                      Remove
+                      Remove <span className="sr-only">{m.label}</span>
                     </button>
                   </td>
                 </tr>
@@ -263,21 +336,119 @@ export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <button
+            id="add-adult"
             type="button"
             className="btn"
-            onClick={() => set({ members: relabel([...h.members, { id: nextId('a'), label: '', role: 'adult', age: 30, sex: 'F' }]) })}
+            onClick={() => set({ members: relabel([...h.members, { id: nextId('a'), label: '', role: 'adult', age: NaN, sex: 'F' }]) })}
           >
             Add adult
           </button>
           <button
+            id="add-child"
             type="button"
             className="btn"
-            onClick={() => set({ members: relabel([...h.members, { id: nextId('c'), label: '', role: 'child', age: 6, sex: 'F' }]) })}
+            onClick={() => set({ members: relabel([...h.members, { id: nextId('c'), label: '', role: 'child', age: NaN, sex: 'F' }]) })}
           >
             Add child
           </button>
         </div>
       </Section>
+
+      {subjects.length > 0 && (
+        <Section
+          id="access-needs"
+          title="Access needs"
+          description="Answer every question. Nothing is filled in for you. Each yes becomes a check every property must pass, and the result names whose need it is."
+        >
+          <div className={`grid gap-4 ${subjects.length > 1 ? 'xl:grid-cols-2' : 'max-w-3xl'}`}>
+            {subjects.map(subject => {
+              const a = (h.accessAssessments ?? []).find(x => x.subject === subject)
+              const label = subjectLabel(h, subject)
+              const person = h.members.find(m => m.id === subject)
+              const why =
+                subject === HOUSEHOLD_SUBJECT ? 'The household has the disability flag.' : person?.wheelchairUser ? `${label} uses a wheelchair.` : null
+              return (
+                <div key={subject} className="rounded-lg border border-rule p-3 sm:p-4" id={`access-panel-${subject}`}>
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <h3 className="font-semibold">{label}</h3>
+                    {why ? (
+                      <span className="text-sm text-muted">{why}</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn-quiet btn text-sm"
+                        onClick={() => set({ accessAssessments: (h.accessAssessments ?? []).filter(x => x.subject !== subject) })}
+                      >
+                        Remove these answers
+                      </button>
+                    )}
+                  </div>
+                  <div className="mt-2 grid gap-2.5">
+                    {ACCESS_QUESTIONS.map(q => {
+                      const id = `access-${subject}-${q.key}`
+                      const v = a?.answers[q.key]
+                      const invalid = issues.some(i => i.path === id && i.severity === 'error')
+                      return (
+                        <fieldset key={q.key} className="grid gap-1" aria-describedby={invalid ? `${id}-error` : undefined}>
+                          <legend className="sr-only">
+                            {label}: {q.question}
+                          </legend>
+                          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                            <span className="text-[0.92rem]" aria-hidden="true">
+                              {q.question}
+                            </span>
+                            <span className="flex gap-1.5">
+                              {(['yes', 'no'] as const).map(opt => (
+                                <label
+                                  key={opt}
+                                  className={`flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-medium ${v === opt ? 'border-accent bg-accent-soft text-accent' : invalid ? 'border-bad' : 'border-rule'}`}
+                                >
+                                  <input
+                                    id={opt === 'yes' ? id : `${id}-no`}
+                                    type="radio"
+                                    name={id}
+                                    checked={v === opt}
+                                    aria-invalid={invalid || undefined}
+                                    onChange={() => answer(subject, q.key, opt)}
+                                  />
+                                  {opt === 'yes' ? 'Yes' : 'No'}
+                                </label>
+                              ))}
+                            </span>
+                          </div>
+                          {invalid && (
+                            <span id={`${id}-error`} className="text-sm font-medium text-bad">
+                              Answer yes or no.
+                            </span>
+                          )}
+                        </fieldset>
+                      )
+                    })}
+                    {a?.answers.equipment_or_carer === 'yes' && (
+                      <label className="field">
+                        <span>What equipment or care (optional, kept with the record)</span>
+                        <input
+                          id={`access-${subject}-note`}
+                          className="input"
+                          value={a.note ?? ''}
+                          onChange={e =>
+                            set({ accessAssessments: (h.accessAssessments ?? []).map(x => (x.subject === subject ? { ...x, note: e.target.value } : x)) })
+                          }
+                        />
+                      </label>
+                    )}
+                  </div>
+                  <p className="mt-2 text-xs text-faint">
+                    {a?.answeredBy && a.answeredAt
+                      ? `Last answered by ${a.answeredBy.name}, ${formatDateTime(a.answeredAt)}`
+                      : 'Example answers are confirmed by whoever runs the search.'}
+                  </p>
+                </div>
+              )
+            })}
+          </div>
+        </Section>
+      )}
 
       <Section title="Places that matter" aside={<span className="text-sm text-muted">Journey times are measured to each of these</span>}>
         {h.destinations.length === 0 && (
@@ -285,24 +456,24 @@ export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string
             Add schools, work, treatment, care and support the household relies on. Each one is weighed under the 2012 Suitability Order, art.2.
           </p>
         )}
-        <ul className="grid gap-2">
+        <ul className="grid gap-3">
           {h.destinations.map(d => (
-            <li key={d.id} className="grid items-end gap-2 sm:grid-cols-[9rem_minmax(0,1fr)_7rem_6rem_auto]">
-              <label className="field">
-                <span>Who</span>
+            <li key={d.id} className="grid items-start gap-2 sm:grid-cols-[9rem_minmax(0,1fr)_7rem_6rem_auto]">
+              <Field id={`who-${d.id}`} label="Who" issues={issues}>
                 <select
-                  id={`who-${d.id}`}
+                  {...fieldA11y(`who-${d.id}`, issues)}
                   className="input"
                   value={d.personId}
                   onChange={e => set({ destinations: h.destinations.map(x => (x.id === d.id ? { ...x, personId: e.target.value } : x)) })}
                 >
+                  {!h.members.some(m => m.id === d.personId) && <option value="">Choose…</option>}
                   {h.members.map(m => (
                     <option key={m.id} value={m.id}>
                       {m.label}
                     </option>
                   ))}
                 </select>
-              </label>
+              </Field>
               <label className="field">
                 <span>Place</span>
                 <select
@@ -327,30 +498,27 @@ export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string
                   ))}
                 </select>
               </label>
-              <label className="field">
-                <span>Arrive by</span>
+              <Field id={`arrive-${d.id}`} label="Arrive by" issues={issues}>
                 <input
-                  id={`arrive-${d.id}`}
+                  {...fieldA11y(`arrive-${d.id}`, issues)}
                   type="time"
                   className="input num"
                   value={d.arriveBy}
                   onChange={e => set({ destinations: h.destinations.map(x => (x.id === d.id ? { ...x, arriveBy: e.target.value } : x)) })}
                 />
-              </label>
-              <label className="field">
-                <span>Days/week</span>
-                <input
-                  id={`days-${d.id}`}
-                  type="number"
+              </Field>
+              <Field id={`days-${d.id}`} label="Days/week" issues={issues}>
+                <NumberInput
+                  {...fieldA11y(`days-${d.id}`, issues)}
                   min={1}
                   max={7}
                   className="input num"
                   value={d.daysPerWeek}
-                  onChange={e => set({ destinations: h.destinations.map(x => (x.id === d.id ? { ...x, daysPerWeek: Number(e.target.value) } : x)) })}
+                  onValue={n => set({ destinations: h.destinations.map(x => (x.id === d.id ? { ...x, daysPerWeek: n } : x)) })}
                 />
-              </label>
-              <button type="button" className="btn btn-quiet mb-1 text-sm" onClick={() => set({ destinations: h.destinations.filter(x => x.id !== d.id) })}>
-                Remove
+              </Field>
+              <button type="button" className="btn btn-quiet text-sm sm:mt-6" onClick={() => set({ destinations: h.destinations.filter(x => x.id !== d.id) })}>
+                Remove <span className="sr-only">{placeName(d.id)}</span>
               </button>
             </li>
           ))}
@@ -360,11 +528,20 @@ export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string
           className="btn mt-3"
           onClick={() => {
             const p = PLACES[0]
-            const child = h.members.find(m => m.role === 'child') ?? h.members[0]
+            const who = h.members.find(m => m.role === 'child') ?? h.members[0]
             set({
               destinations: [
                 ...h.destinations,
-                { id: nextId('d'), personId: child.id, kind: p.kind, name: p.name, refId: p.refId, location: p.location, arriveBy: '08:45', daysPerWeek: 5 },
+                {
+                  id: nextId('d'),
+                  personId: who?.id ?? '',
+                  kind: p.kind,
+                  name: p.name,
+                  refId: p.refId,
+                  location: p.location,
+                  arriveBy: '08:45',
+                  daysPerWeek: 5,
+                },
               ],
             })
           }}
@@ -376,32 +553,30 @@ export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string
       <div className="grid gap-5 lg:grid-cols-2">
         <Section title="Must-haves">
           <div className="grid gap-2">
-            {ACCESS.map(([k, label]) => (
-              <label key={k} className="flex items-center gap-2">
-                <input
-                  id={`access-${k}`}
-                  type="checkbox"
-                  checked={h.accessNeeds.includes(k)}
-                  onChange={e => set({ accessNeeds: e.target.checked ? [...h.accessNeeds, k] : h.accessNeeds.filter(x => x !== k) })}
-                />
-                {label}
-              </label>
-            ))}
+            {h.accessNeeds.length > 0 && (
+              <div className="callout text-sm">
+                Recorded under the earlier version, for the whole household: {h.accessNeeds.map(n => ACCESS_NEED_LABEL[n].toLowerCase()).join(', ')}. These
+                still apply.{' '}
+                <button type="button" className="link text-sm" onClick={() => set({ accessNeeds: [] })}>
+                  Remove them
+                </button>
+              </div>
+            )}
+            <p className="text-sm text-muted">Access needs are asked per person: tick “Wheelchair user” above, or the disability flag.</p>
             <label className="flex items-center gap-2">
-              <input id="pets" type="checkbox" checked={h.petsMustBeAccommodated} onChange={e => set({ petsMustBeAccommodated: e.target.checked })} />
-              Pet or assistance dog must be accommodated
+              <input id="pets" type="checkbox" checked={h.petsMustBeAccommodated} onChange={e => set({ petsMustBeAccommodated: e.target.checked })} />A pet must
+              be accommodated
             </label>
-            <label className="field mt-2 max-w-xs">
-              <span>Most the household can pay towards charges (£/week)</span>
-              <input
-                id="afford"
-                type="number"
+            <Field id="afford" label="Most the household can pay towards charges (£/week)" issues={issues} className="mt-2 max-w-xs">
+              <NumberInput
+                {...fieldA11y('afford', issues)}
                 min={0}
+                step="0.01"
                 className="input num"
                 value={h.maxHouseholdContributionWeekly}
-                onChange={e => set({ maxHouseholdContributionWeekly: Number(e.target.value) })}
+                onValue={n => set({ maxHouseholdContributionWeekly: n })}
               />
-            </label>
+            </Field>
           </div>
         </Section>
         <Section title="Priority flags">
@@ -433,7 +608,7 @@ export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string
         )}
         <ul className="grid gap-2">
           {h.safeguardingZones.map(z => (
-            <li key={z.id} className="flex flex-wrap items-end gap-2">
+            <li key={z.id} className="flex flex-wrap items-start gap-2">
               <label className="field">
                 <span>Centre</span>
                 <select
@@ -453,21 +628,20 @@ export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string
                   ))}
                 </select>
               </label>
-              <label className="field w-28">
-                <span>Radius (km)</span>
-                <input
-                  id={`radius-${z.id}`}
-                  type="number"
-                  min={0.5}
+              <Field id={`radius-${z.id}`} label="Radius (km)" issues={issues} className="w-36">
+                <NumberInput
+                  {...fieldA11y(`radius-${z.id}`, issues)}
+                  min={0.1}
+                  max={50}
                   step={0.5}
                   className="input num"
                   value={z.radiusKm}
-                  onChange={e => set({ safeguardingZones: h.safeguardingZones.map(x => (x.id === z.id ? { ...x, radiusKm: Number(e.target.value) } : x)) })}
+                  onValue={n => set({ safeguardingZones: h.safeguardingZones.map(x => (x.id === z.id ? { ...x, radiusKm: n } : x)) })}
                 />
-              </label>
+              </Field>
               <button
                 type="button"
-                className="btn btn-quiet mb-1 text-sm"
+                className="btn btn-quiet mt-6 text-sm"
                 onClick={() => set({ safeguardingZones: h.safeguardingZones.filter(x => x.id !== z.id) })}
               >
                 Remove
@@ -499,13 +673,23 @@ export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string
           {error}
         </p>
       )}
-      <div className="flex flex-wrap gap-3">
-        <button type="submit" className="btn btn-primary" disabled={busy}>
+      <div className="flex flex-wrap items-center gap-3">
+        <button type="submit" className="btn btn-primary" disabled={busy || !allowed.ok} aria-describedby={!allowed.ok ? 'search-not-allowed' : undefined}>
           {busy ? 'Checking every property…' : 'Find placements'}
         </button>
         <button type="button" className="btn" onClick={() => go({ view: 'home' })}>
           Cancel
         </button>
+        {!allowed.ok && (
+          <span id="search-not-allowed" className="text-sm text-muted">
+            {allowed.reason}
+          </span>
+        )}
+        {showErrors && errorCount > 0 && (
+          <span className="text-sm font-medium text-bad">
+            {errorCount} problem{errorCount === 1 ? '' : 's'} to fix before the search can run
+          </span>
+        )}
       </div>
     </form>
   )

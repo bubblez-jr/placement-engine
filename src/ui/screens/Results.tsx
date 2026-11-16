@@ -4,10 +4,12 @@ import { useNav } from '../../store/nav'
 import { formatDate, formatDateTime } from '../../engine/dates'
 import { rejectionSummary } from '../../engine/explain'
 import { CRITERIA_ORDER } from '../criteria'
-import { FactorLegend, gbp, PageHeader, ScatterPlot, ScoreBar, ScoreRing, Section, TierTag } from '../bits'
+import { FactorLegend, gbp, PageHeader, ScatterPlot, ScoreBar, ScoreRing, Section, TierTag, WarningList } from '../bits'
+import { effectiveAccessNeeds, needSentence } from '../../engine/access'
 import { Icon } from '../icons'
 import { MiniMap } from '../MiniMap'
 import { shortHash } from '../../audit/hash'
+import { decisionRecords } from '../../audit/records'
 
 export function Results({ searchId }: { searchId: string }) {
   const { getSearch, data, noteReview } = useApp()
@@ -23,7 +25,7 @@ export function Results({ searchId }: { searchId: string }) {
   const eligible = s.candidates.filter(c => c.eligible).sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
   const rejected = s.candidates.filter(c => !c.eligible)
   const rec = s.candidates.find(c => c.propertyId === s.recommendedId)
-  const decided = data.chain.find(r => r.snapshot.search.id === s.id)
+  const decided = decisionRecords(data.chain).find(r => r.snapshot.search.id === s.id)
   const applicable = CRITERIA_ORDER.filter(k => s.effectiveWeights[k.key] > 0)
   const openProperty = (pid: string) => go({ view: 'property', searchId, propertyId: pid })
   const toggle = (pid: string) => setCompare(c => (c.includes(pid) ? c.filter(x => x !== pid) : c.length >= 3 ? [...c.slice(1), pid] : [...c, pid]))
@@ -38,6 +40,7 @@ export function Results({ searchId }: { searchId: string }) {
     `${hh.expectedNights} nights from ${formatDate(hh.needFrom)}`,
     hh.homeAreaLabel,
   ]
+  const access = effectiveAccessNeeds(hh)
 
   return (
     <div className="grid gap-6">
@@ -63,6 +66,17 @@ export function Results({ searchId }: { searchId: string }) {
           ))}
         </span>
       </PageHeader>
+
+      {access.length > 0 && (
+        <p className="callout text-sm">
+          <b>Access checks applied to every property:</b> {access.map(needSentence).join('; ')}.
+        </p>
+      )}
+      <WarningList
+        issues={s.validation ?? []}
+        title="Warnings when this search ran"
+        onLink={l => (l.seq ? go({ view: 'decision', seq: l.seq }) : l.searchId ? go({ view: 'results', searchId: l.searchId }) : undefined)}
+      />
 
       {decided && (
         <div
