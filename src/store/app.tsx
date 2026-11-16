@@ -8,7 +8,7 @@ import type { ConsentInput, DecisionInput } from '../engine/decision'
 import { occupancyOf, type OccupiedPeriod } from '../engine/occupancy'
 import type { Placement, TransitionInput } from '../engine/placement'
 import type { Task } from '../engine/tasks'
-import type { Household, Property, Ruleset, SearchResult, TaskOwner } from '../engine/types'
+import type { Household, Issue, Property, Ruleset, SearchResult, TaskOwner } from '../engine/types'
 import { estimateProvider } from '../travel/estimate'
 import { createTravelTimeProvider } from '../travel/traveltime'
 import type { TravelProvider } from '../travel/provider'
@@ -29,9 +29,15 @@ import {
   cmdCompleteTask,
   cmdReassignTask,
   cmdCancelTask,
+  cmdExport,
+  cmdImportHousehold,
+  cmdPublishSubsidyTable,
   openCases,
   type CommandCtx,
+  type ExportRequest,
 } from './commands'
+import type { HouseholdImport } from '../engine/householdImport'
+import type { SubsidyImportInput } from '../engine/subsidyTable'
 import { activeRulesetOf, seed, type AppData, type HashedRuleset, type ReviewLog } from './data'
 import { cmdReset, seedDemo } from './demo'
 import { KEY_V1, KEY_V2, loadStored } from './migrate'
@@ -71,6 +77,11 @@ interface AppApi {
   reassignTask: (taskId: string, input: { to?: TaskOwner | null; note?: string }) => Sealed
   cancelTask: (taskId: string, input: { reason?: string }) => Sealed
   publishRuleset: (draft: Ruleset, equalityNote: string) => Promise<HashedRuleset>
+  publishSubsidyTable: (input: SubsidyImportInput & { equalityNote?: string }) => Promise<HashedRuleset>
+  /** Read a household file for review on the form. Never searches. */
+  importHousehold: (text: string) => HouseholdImport & { issues: Issue[] }
+  /** Seal the export record, then hand back what to deliver */
+  exportRecords: (req: ExportRequest) => Promise<{ content: string | null; fileName: string; seq: number }>
   replaceProperties: (props: Property[], mode: 'add' | 'replace') => void
   confirmAvailability: (propertyId: string) => void
   verify: () => Promise<ChainCheck>
@@ -219,6 +230,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const { data: next, ruleset } = await cmdPublishRuleset(current(), ctx(), draft, equalityNote)
         commit(next)
         return ruleset
+      },
+      async publishSubsidyTable(input) {
+        const { data: next, ruleset } = await cmdPublishSubsidyTable(current(), ctx(), input)
+        commit(next)
+        return ruleset
+      },
+      importHousehold: text => cmdImportHousehold(current(), ctx(), text),
+      async exportRecords(req) {
+        const { data: next, record, content, fileName } = await cmdExport(current(), ctx(), req)
+        commit(next)
+        return { content, fileName, seq: record.seq }
       },
       replaceProperties: (props, mode) => commit(cmdReplaceProperties(current(), ctx(), props, mode)),
       confirmAvailability: pid => commit(cmdConfirmAvailability(current(), ctx(), pid)),

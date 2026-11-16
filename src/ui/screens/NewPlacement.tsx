@@ -11,6 +11,9 @@ import { check } from '../../engine/permissions'
 import { CASE_REF_MAX, MAX_STAY_NIGHTS, validateHousehold, ValidationError } from '../../engine/validate'
 import type { AccessAssessment, AccessQuestion, Household, Issue, Person, PriorityFlag, YesNo } from '../../engine/types'
 import { ErrorSummary, Field, FieldError, fieldA11y, NotAllowed, NumberInput, PageHeader, Section, WarningList } from '../bits'
+import { ImportHousehold, ImportReportPanel, type ImportedReport } from '../importHousehold'
+import { PlaceByPostcode } from '../placeByPostcode'
+import { placeSourceText } from '../provenance'
 
 const FLAGS: [PriorityFlag, string, string][] = [
   ['child_protection_plan', 'Child protection plan', 'raises location and support'],
@@ -72,6 +75,7 @@ export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string
     return sc ? sc.household(today) : blankHousehold(today)
   }, [scenarioId, fromSearchId, getSearch, today])
   const [h, setH] = useState<Household>(initial)
+  const [imported, setImported] = useState<ImportedReport | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   /** Errors show after the first submit, then update live as fields are corrected. */
@@ -139,6 +143,17 @@ export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string
       </PageHeader>
 
       {!allowed.ok && <NotAllowed reason={allowed.reason} className="callout" />}
+      <div>
+        <ImportHousehold
+          onImported={(household, report) => {
+            setH(household)
+            setImported(report)
+            // Show at once what the officer has to fix; nothing is searched.
+            setShowErrors(true)
+          }}
+        />
+      </div>
+      {imported && <ImportReportPanel report={imported} onDismiss={() => setImported(null)} />}
       {showErrors && <ErrorSummary ref={summaryRef} issues={issues} />}
       <WarningList
         issues={issues}
@@ -156,10 +171,9 @@ export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string
               onChange={e => set({ caseRef: e.target.value })}
             />
           </Field>
-          <label className="field">
-            <span>Last settled area</span>
+          <Field id="homeArea" label="Last settled area" issues={issues}>
             <select
-              id="homeArea"
+              {...fieldA11y('homeArea', issues)}
               className="input"
               value={AREAS.find(a => a.label === h.homeAreaLabel)?.id ?? ''}
               onChange={e => {
@@ -167,14 +181,16 @@ export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string
                 if (a) set({ homeArea: a.location, homeAreaLabel: a.label })
               }}
             >
-              {!AREAS.some(a => a.label === h.homeAreaLabel) && <option value="">{h.homeAreaLabel}</option>}
+              {!AREAS.some(a => a.label === h.homeAreaLabel) && (
+                <option value="">{Number.isFinite(h.homeArea?.lat) && h.homeAreaLabel ? h.homeAreaLabel : 'Choose…'}</option>
+              )}
               {AREAS.map(a => (
                 <option key={a.id} value={a.id}>
                   {a.label}
                 </option>
               ))}
             </select>
-          </label>
+          </Field>
           <Field id="needFrom" label="Needed from" issues={issues}>
             <input {...fieldA11y('needFrom', issues)} type="date" className="input" value={h.needFrom} onChange={e => set({ needFrom: e.target.value })} />
           </Field>
@@ -433,6 +449,9 @@ export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string
                       </label>
                     )}
                   </div>
+                  {h.importedFrom && a && !a.answeredBy && Object.keys(a.answers).length > 0 && (
+                    <p className="mt-2 text-sm font-medium text-warn">These answers came from the imported file: check each one with the household.</p>
+                  )}
                   <p className="mt-2 text-xs text-faint">
                     {a?.answeredBy && a.answeredAt
                       ? `In the earlier search these were confirmed by ${a.answeredBy.name}, ${formatDateTime(a.answeredAt)}. `
@@ -470,21 +489,30 @@ export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string
                   ))}
                 </select>
               </Field>
-              <label className="field">
-                <span>Place</span>
+              <Field id={`place-${d.id}`} label="Place" issues={issues}>
                 <select
-                  id={`place-${d.id}`}
+                  {...fieldA11y(`place-${d.id}`, issues, `place-${d.id}-source`)}
                   className="input"
-                  value={PLACES.find(p => p.name === d.name)?.id ?? ''}
+                  value={(d.placeSource ?? 'example') === 'example' ? (PLACES.find(p => p.name === d.name)?.id ?? '') : 'own'}
                   onChange={e => {
-                    const p = PLACES.find(x => x.id === e.target.value)!
+                    const p = PLACES.find(x => x.id === e.target.value)
+                    if (!p) return
                     set({
-                      destinations: h.destinations.map(x => (x.id === d.id ? { ...x, kind: p.kind, name: p.name, refId: p.refId, location: p.location } : x)),
+                      destinations: h.destinations.map(x =>
+                        x.id === d.id
+                          ? { ...x, kind: p.kind, name: p.name, refId: p.refId, location: p.location, placeSource: 'example' as const, postcode: undefined }
+                          : x,
+                      ),
                     })
                   }}
                 >
+                  {(d.placeSource ?? 'example') !== 'example' && (
+                    <option value="own">
+                      {d.name} ({PLACE_KIND_LABEL[d.kind].toLowerCase()})
+                    </option>
+                  )}
                   {(['school', 'work', 'medical', 'care', 'support'] as const).map(kind => (
-                    <optgroup key={kind} label={PLACE_KIND_LABEL[kind]}>
+                    <optgroup key={kind} label={`${PLACE_KIND_LABEL[kind]}: synthetic examples`}>
                       {PLACES.filter(p => p.kind === kind).map(p => (
                         <option key={p.id} value={p.id}>
                           {p.name}
@@ -493,7 +521,10 @@ export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string
                     </optgroup>
                   ))}
                 </select>
-              </label>
+                <span id={`place-${d.id}-source`} className="text-xs text-faint">
+                  {placeSourceText(d)}
+                </span>
+              </Field>
               <Field id={`arrive-${d.id}`} label="Arrive by" issues={issues}>
                 <input
                   {...fieldA11y(`arrive-${d.id}`, issues)}
@@ -519,31 +550,36 @@ export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string
             </li>
           ))}
         </ul>
-        <button
-          type="button"
-          className="btn mt-3"
-          onClick={() => {
-            const p = PLACES[0]
-            const who = h.members.find(m => m.role === 'child') ?? h.members[0]
-            set({
-              destinations: [
-                ...h.destinations,
-                {
-                  id: nextId('d'),
-                  personId: who?.id ?? '',
-                  kind: p.kind,
-                  name: p.name,
-                  refId: p.refId,
-                  location: p.location,
-                  arriveBy: '08:45',
-                  daysPerWeek: 5,
-                },
-              ],
-            })
-          }}
-        >
-          Add a place
-        </button>
+        <div className="mt-3 flex flex-wrap items-start gap-2">
+          <button
+            id="add-place"
+            type="button"
+            className="btn"
+            onClick={() => {
+              const p = PLACES[0]
+              const who = h.members.find(m => m.role === 'child') ?? h.members[0]
+              set({
+                destinations: [
+                  ...h.destinations,
+                  {
+                    id: nextId('d'),
+                    personId: who?.id ?? '',
+                    kind: p.kind,
+                    name: p.name,
+                    refId: p.refId,
+                    location: p.location,
+                    arriveBy: '08:45',
+                    daysPerWeek: 5,
+                    placeSource: 'example',
+                  },
+                ],
+              })
+            }}
+          >
+            Add an example place
+          </button>
+          <PlaceByPostcode members={h.members} onAdd={d => set({ destinations: [...h.destinations, { ...d, id: nextId('d') }] })} />
+        </div>
       </Section>
 
       <div className="grid gap-5 lg:grid-cols-2">

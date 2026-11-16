@@ -4,6 +4,8 @@ import { clocksNow, consentAtDecision, consentSummary, currentConsent, deciderOf
 import { ACCESS_QUESTIONS, effectiveAccessNeeds, needSentence, subjectLabel } from '../engine/access'
 import { formatDate, formatDateTime } from '../engine/dates'
 import { TIER_LABEL } from '../engine/scoring'
+import { journeySourceOf } from '../engine/journeys'
+import { JOURNEY_SOURCE_LABEL, journeyView, subsidyOfSearch } from '../audit/provenance'
 
 // The audit pack as a PDF, rendered from the sealed snapshot (never from live
 // data), with the record and policy hashes printed on every page.
@@ -48,6 +50,14 @@ function AuditDoc({ r, chain, now }: { r: DecisionRecord; chain: ChainRecord[]; 
   const prop = properties.find(p => p.id === d.chosenPropertyId)
   const rec = s.candidates.find(c => c.propertyId === s.recommendedId)
   const person = (id: string) => s.household.members.find(m => m.id === id)?.label ?? id
+  const journeys = journeyView(s)
+  const subsidy = subsidyOfSearch(s, rs)
+  const placeSource = (x: (typeof h.destinations)[number]) =>
+    x.placeSource === 'postcode'
+      ? `located from postcode ${x.postcode ?? ''}`
+      : x.placeSource === 'import'
+        ? 'from the imported file'
+        : 'synthetic example place'
   const money = (n: number) => `£${n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   return (
     <Document title={`Placement decision record ${r.seq}`} author={rs.councilName} subject={`Case ${s.household.caseRef}`}>
@@ -102,6 +112,12 @@ function AuditDoc({ r, chain, now }: { r: DecisionRecord; chain: ChainRecord[]; 
         {(h.accessNeeds ?? []).length > 0 && (
           <Text>Recorded for the whole household under the earlier version: {h.accessNeeds.join(', ').replaceAll('_', ' ')}.</Text>
         )}
+        {h.importedFrom && (
+          <Text>
+            Details imported from {h.importedFrom.system ?? 'a case system file'} by {h.importedFrom.importedBy.name},{' '}
+            {formatDateTime(h.importedFrom.importedAt)}, then reviewed on the form.
+          </Text>
+        )}
         {(s.validation ?? []).map((w, i) => (
           <Text key={`w${i}`} style={st.small}>
             Warning when searched: {w.message}
@@ -114,7 +130,7 @@ function AuditDoc({ r, chain, now }: { r: DecisionRecord; chain: ChainRecord[]; 
             v={
               s.household.destinations
                 .filter(x => x.personId === m.id)
-                .map(x => `${x.name} (arrive ${x.arriveBy})`)
+                .map(x => `${x.name} (arrive ${x.arriveBy}; ${placeSource(x)})`)
                 .join('; ') || '—'
             }
           />
@@ -180,11 +196,16 @@ function AuditDoc({ r, chain, now }: { r: DecisionRecord; chain: ChainRecord[]; 
                 {c.message} <Text style={st.small}>({c.legalBasis})</Text>
               </Text>
             ))}
+            <Text style={st.small}>{journeys.headline}</Text>
             {chosen.journeys.map(j => (
               <Text key={j.destinationId}>
-                Journey: {person(j.personId)} to {j.name}: {j.minutes ?? '—'} min, {j.distanceKm} km (estimated)
+                Journey: {person(j.personId)} to {j.name}: {j.minutes === null ? 'no public transport route found' : `${j.minutes} min`}, {j.distanceKm} km (
+                {JOURNEY_SOURCE_LABEL[journeySourceOf(j, s.travelProvider)].toLowerCase()})
               </Text>
             ))}
+            <Text style={st.small}>
+              Costs use {subsidy.label.toLowerCase()}. {subsidy.detail}
+            </Text>
             {chosen.cost.lines.map(l => (
               <Text key={l.key}>
                 Cost: {l.label}: {money(l.perUnit)}/{l.unit}, {money(l.stayTotal)} over the stay ({l.basis})
@@ -214,9 +235,11 @@ function AuditDoc({ r, chain, now }: { r: DecisionRecord; chain: ChainRecord[]; 
 
         <Text style={st.h2}>10. Method and seal</Text>
         <Text>
-          {s.travelProvider.label}. {s.travelProvider.assumptions}. {s.travelProvider.disclaimer}
+          Journeys: {journeys.label}. {journeys.disclaimer} {journeys.assumptions}.
         </Text>
-        <Text>Subsidy: {rs.subsidy.source}</Text>
+        <Text>
+          Subsidy: {subsidy.label}. {subsidy.detail}
+        </Text>
         <Text>Record hash: {r.rowHash}</Text>
         <Text>Previous record: {r.prevHash}</Text>
 

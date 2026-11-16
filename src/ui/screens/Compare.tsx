@@ -5,6 +5,9 @@ import { biggestDifferences, costComparison } from '../../engine/explain'
 import { TIER_LABEL } from '../../engine/scoring'
 import { UNIT_LABEL } from '../criteria'
 import { gbp, PageHeader, ScoreBar, Section } from '../bits'
+import { journeyView } from '../../audit/provenance'
+import { journeySourceOf } from '../../engine/journeys'
+import { subsidyFor } from '../provenance'
 
 export function Compare({ searchId, ids: initialIds }: { searchId: string; ids: string[] }) {
   const { getSearch, data, noteReview } = useApp()
@@ -94,7 +97,7 @@ export function Compare({ searchId, ids: initialIds }: { searchId: string; ids: 
                     cols.map(c => gbp(c.cost.nightlyCharge, 2)),
                   )}
                   {row(
-                    'Housing benefit subsidy reclaimed',
+                    `Housing benefit subsidy reclaimed (${subsidyFor(s, data.rulesets).label.toLowerCase()})`,
                     cols.map(c => `−${gbp(c.cost.subsidyPerNight, 2)}`),
                   )}
                   {row(
@@ -120,7 +123,9 @@ export function Compare({ searchId, ids: initialIds }: { searchId: string; ids: 
                       `${person(d.personId)} → ${d.name}`,
                       cols.map(c => {
                         const j = c.journeys.find(x => x.destinationId === d.id)
-                        return j?.minutes != null ? `${j.minutes} min` : '—'
+                        if (!j) return '—'
+                        const est = journeySourceOf(j, s.travelProvider) === 'estimate' && journeyView(s).outcome !== 'estimated'
+                        return j.minutes != null ? `${j.minutes} min${est ? ' (estimate)' : ''}` : 'No route'
                       }),
                     ),
                   )}
@@ -155,7 +160,7 @@ export function Compare({ searchId, ids: initialIds }: { searchId: string; ids: 
                   {b.label} is better on {biggestDifferences(b, a).join(' and ')}.
                 </li>
               )}
-              {costComparison(a, b).map((t, i) => (
+              {costComparison(a, b, subsidyFor(s, data.rulesets).status).map((t, i) => (
                 <li key={i}>{t}</li>
               ))}
             </ul>

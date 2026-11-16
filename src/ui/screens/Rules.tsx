@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../../store/app'
 import { formatDate, formatDateTime } from '../../engine/dates'
 import type { Ruleset } from '../../engine/types'
@@ -7,6 +7,8 @@ import { NotAllowed, PageHeader, SERIES, Section } from '../bits'
 import { useUser } from '../../auth/session'
 import { check, ROLE_LABEL } from '../../engine/permissions'
 import { bnbLimitDays, EXCEPTION_LABEL, placementPolicyOf } from '../../engine/policy'
+import { subsidyProvenance } from '../../engine/cost'
+import { SubsidyTableSection } from '../subsidyImport'
 
 function PlacementPolicyRows({ rs }: { rs: Ruleset }) {
   const pp = placementPolicyOf(rs)
@@ -35,6 +37,8 @@ export function Rules() {
   const allowed = check(user, 'publish_policy')
   const [draft, setDraft] = useState<Ruleset>(() => structuredClone(activeRuleset))
   const [equality, setEquality] = useState('')
+  // The subsidy table changes only through its own import; keep the draft's copy in step with the version in use.
+  useEffect(() => setDraft(d => ({ ...d, subsidy: structuredClone(activeRuleset.subsidy) })), [activeRuleset.hash, activeRuleset.subsidy])
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const total = draft.criteria.reduce((a, c) => a + c.weight, 0)
   const changed = useMemo(
@@ -191,10 +195,15 @@ export function Rules() {
                 .map(m => `${m.flag.replaceAll('_', ' ')} ×${m.multiplier} ${draft.criteria.find(c => c.key === m.criterion)?.label.toLowerCase()}`)
                 .join('; ')}
             </li>
-            <li className="text-muted">{draft.subsidy.source}</li>
+            <li className="text-muted">
+              Subsidy: {subsidyProvenance(draft).label.toLowerCase()} (see the subsidy table below). School transport fares and taxi rates are the council’s own
+              assumptions, set in this policy.
+            </li>
           </ul>
         </Section>
       </div>
+
+      <SubsidyTableSection />
 
       <Section
         title="Placements, approvals and tasks"

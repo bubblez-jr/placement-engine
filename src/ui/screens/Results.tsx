@@ -10,6 +10,8 @@ import { Icon } from '../icons'
 import { MiniMap } from '../MiniMap'
 import { shortHash } from '../../audit/hash'
 import { decisionRecords } from '../../audit/records'
+import { journeyView } from '../../audit/provenance'
+import { JourneySourceNote, SubsidyChip, subsidyFor } from '../provenance'
 
 export function Results({ searchId }: { searchId: string }) {
   const { getSearch, data, noteReview } = useApp()
@@ -41,6 +43,8 @@ export function Results({ searchId }: { searchId: string }) {
     hh.homeAreaLabel,
   ]
   const access = effectiveAccessNeeds(hh)
+  const subsidy = subsidyFor(s, data.rulesets)
+  const journeys = journeyView(s)
 
   return (
     <div className="grid gap-6">
@@ -67,6 +71,7 @@ export function Results({ searchId }: { searchId: string }) {
         </span>
       </PageHeader>
 
+      <JourneySourceNote s={s} />
       {access.length > 0 && (
         <p className="callout text-sm">
           <b>Access checks applied to every property:</b> {access.map(needSentence).join('; ')}.
@@ -119,7 +124,10 @@ export function Results({ searchId }: { searchId: string }) {
             </ul>
             {s.explanation.cost.length > 0 && (
               <div className="callout mt-4">
-                <div className="eyebrow mb-1.5">Cost, by who pays</div>
+                <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                  <span className="eyebrow">Cost, by who pays</span>
+                  <SubsidyChip sub={subsidy} id="subsidy-status" />
+                </div>
                 <ul className="grid gap-1 text-[0.92rem]">
                   {s.explanation.cost.map((r, i) => (
                     <li key={i}>{r}</li>
@@ -284,8 +292,9 @@ export function Results({ searchId }: { searchId: string }) {
             </table>
           </div>
           <p className="border-t border-rule px-5 py-3 text-xs text-muted">
-            TA budget is the nightly charge less the housing benefit subsidy the council can reclaim. Education is home-to-school travel the council funds under
-            its policy. Public cost of stay = both, over {s.household.expectedNights} nights.
+            TA budget is the nightly charge less the housing benefit subsidy the council can reclaim ({subsidy.label.toLowerCase()}). Education is
+            home-to-school travel the council funds under its policy, at the council’s own assumed fares. Public cost of stay = both, over{' '}
+            {s.household.expectedNights} nights.
           </p>
         </Section>
       )}
@@ -335,8 +344,8 @@ export function Results({ searchId }: { searchId: string }) {
       </Section>
 
       <p className="text-xs leading-relaxed text-faint">
-        {s.travelProvider.disclaimer} {s.travelProvider.assumptions}. Policy v{s.rulesetVersion} <span className="hash">{shortHash(s.rulesetHash)}</span> ·{' '}
-        {s.dataVersions.properties}.
+        Journeys: {journeys.label}. {journeys.disclaimer} {journeys.assumptions}. Subsidy: {subsidy.label}. {subsidy.detail} Policy v{s.rulesetVersion}{' '}
+        <span className="hash">{shortHash(s.rulesetHash)}</span> · {s.dataVersions.properties}.
       </p>
     </div>
   )

@@ -12,22 +12,16 @@ import { AccessAnswers } from '../accessView'
 import { ConsentText } from '../consent'
 import { gbp, IS_DEMO_BUILD } from '../bits'
 import { Icon } from '../icons'
-
-function downloadBlob(name: string, blob: Blob) {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = name
-  a.click()
-  setTimeout(() => URL.revokeObjectURL(url), 2000)
-}
+import { journeyView, subsidyOfSearch } from '../../audit/provenance'
+import { exportFileName } from '../../audit/exports'
+import { ExportStatus, useExporter } from '../exports'
+import { JourneyTag, placeSourceText, SubsidyChip } from '../provenance'
 
 export function AuditReport({ seq }: { seq: number }) {
   const { data, verify, now } = useApp()
   const { go } = useNav()
   const [check, setCheck] = useState<ChainCheck | null>(null)
-  const [pdfBusy, setPdfBusy] = useState(false)
-  const [copied, setCopied] = useState<string | null>(null)
+  const ex = useExporter()
   useEffect(() => {
     verify().then(setCheck)
   }, [verify, data.chain])
@@ -46,17 +40,18 @@ export function AuditReport({ seq }: { seq: number }) {
   const rec = s.candidates.find(c => c.propertyId === s.recommendedId)
   const person = (id: string) => s.household.members.find(m => m.id === id)?.label ?? id
   const intact = check ? check.ok || (check.brokenAt !== undefined && check.brokenAt > r.seq) : null
-  const json = JSON.stringify({ seq: r.seq, prevHash: r.prevHash, rowHash: r.rowHash, snapshot: r.snapshot }, null, 2)
-
-  async function pdf() {
-    setPdfBusy(true)
-    try {
-      const { renderAuditPdf } = await import('../../pdf/AuditPdf')
-      downloadBlob(`placement-decision-${r!.seq}-${s.household.caseRef}.pdf`, await renderAuditPdf(r!, data.chain, new Date().toISOString()))
-    } finally {
-      setPdfBusy(false)
-    }
-  }
+  const journeys = journeyView(s)
+  const subsidy = subsidyOfSearch(s, rs)
+  const can = ex.allowed.ok && !ex.busy
+  const pdf = () =>
+    ex.pdf(
+      r!.seq,
+      async () => {
+        const { renderAuditPdf } = await import('../../pdf/AuditPdf')
+        return renderAuditPdf(r!, data.chain, new Date().toISOString())
+      },
+      exportFileName('audit_pdf', r!, new Date().toISOString()),
+    )
 
   return (
     <div className="grid gap-4">
@@ -65,34 +60,34 @@ export function AuditReport({ seq }: { seq: number }) {
           <Icon name="arrow-left" size={15} />
           Back to the decision
         </button>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2" id="exports">
           {!IS_DEMO_BUILD && (
             <>
-              <button className="btn btn-primary" onClick={pdf} disabled={pdfBusy}>
-                {pdfBusy ? 'Preparing PDF…' : 'Download PDF'}
+              <button id="export-pdf" className="btn btn-primary" onClick={pdf} disabled={!can}>
+                <Icon name="download" size={15} />
+                {ex.busy === 'audit_pdf' ? 'Preparing PDF…' : 'Download PDF'}
               </button>
-              <button className="btn" onClick={() => downloadBlob(`placement-decision-${r.seq}.json`, new Blob([json], { type: 'application/json' }))}>
+              <button id="export-json-download" className="btn" onClick={() => ex.run('decision_json', 'download', seq)} disabled={!can}>
                 Download record (JSON)
+              </button>
+              <button id="export-note-download" className="btn" onClick={() => ex.run('case_note', 'download', seq)} disabled={!can}>
+                Download case note
               </button>
             </>
           )}
-          <button
-            className="btn"
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(json)
-                setCopied('Record copied as JSON')
-              } catch {
-                setCopied('Copy is blocked here: use the hosted app to download')
-              }
-            }}
-          >
+          <button id="export-note-copy" className="btn" onClick={() => ex.run('case_note', 'clipboard', seq)} disabled={!can}>
+            <Icon name="copy" size={15} />
+            Copy case note
+          </button>
+          <button id="export-json-copy" className="btn" onClick={() => ex.run('decision_json', 'clipboard', seq)} disabled={!can}>
             Copy record (JSON)
           </button>
-          {copied && <span className="text-sm text-muted">{copied}</span>}
         </div>
       </div>
-      {IS_DEMO_BUILD && <p className="text-sm text-muted">PDF and file downloads work in the hosted app; this shared demo cannot save files.</p>}
+      <div className="grid gap-2">
+        <ExportStatus ex={ex} id="export-status" />
+        <p className="text-xs text-muted">Every export is recorded with who made it, when, and a fingerprint of exactly what was exported.</p>
+      </div>
 
       <article className="doc panel mx-auto w-full max-w-[880px] p-5 sm:p-8">
         <header className="grid gap-3 border-b-2 border-ink pb-4">
@@ -247,7 +242,7 @@ export function AuditReport({ seq }: { seq: number }) {
                   <td>
                     {s.household.destinations
                       .filter(x => x.personId === m.id)
-                      .map(x => `${x.name} (arrive ${x.arriveBy}, ${x.daysPerWeek} days/week)`)
+                      .map(x => `${x.name} (arrive ${x.arriveBy}, ${x.daysPerWeek} days/week; ${placeSourceText(x).toLowerCase()})`)
                       .join('; ') || '—'}
                   </td>
                 </tr>
@@ -256,6 +251,12 @@ export function AuditReport({ seq }: { seq: number }) {
           </table>
         </div>
         {s.household.notes && <p className="mt-2 text-sm">Notes: {s.household.notes}</p>}
+        {s.household.importedFrom && (
+          <p className="mt-2 text-sm" id="imported-from">
+            Details imported from {s.household.importedFrom.system ?? 'a case system file'} ({s.household.importedFrom.format}) by{' '}
+            {s.household.importedFrom.importedBy.name}, {formatDateTime(s.household.importedFrom.importedAt)}, then reviewed on the form before the search.
+          </p>
+        )}
         <h3>Access needs</h3>
         <div className="mt-1">
           <AccessAnswers household={s.household} />
@@ -387,15 +388,19 @@ export function AuditReport({ seq }: { seq: number }) {
                 </li>
               ))}
             </ul>
-            <h3>Journeys (estimated)</h3>
+            <h3>Journeys</h3>
+            <p className="mt-1 text-sm text-muted">{journeys.headline}</p>
             <ul className="mt-1 grid gap-0.5 text-sm">
               {chosen.journeys.map(j => (
                 <li key={j.destinationId}>
-                  {person(j.personId)} → {j.name}: {j.minutes ?? '—'} min, {j.distanceKm} km
+                  {person(j.personId)} → {j.name}: {j.minutes === null ? 'no public transport route found' : `${j.minutes} min`}, {j.distanceKm} km{' '}
+                  <JourneyTag j={j} s={s} />
                 </li>
               ))}
             </ul>
-            <h3>Cost</h3>
+            <h3 className="flex flex-wrap items-center gap-2">
+              Cost <SubsidyChip sub={subsidy} />
+            </h3>
             <ul className="mt-1 grid gap-0.5 text-sm">
               {chosen.cost.lines.map(l => (
                 <li key={l.key}>
@@ -446,13 +451,16 @@ export function AuditReport({ seq }: { seq: number }) {
 
         <h2>10. Method, data and seal</h2>
         <ul className="mt-2 grid gap-1 text-sm">
-          <li>
-            Journeys: {s.travelProvider.label}. {s.travelProvider.assumptions}. {s.travelProvider.disclaimer}
+          <li id="method-journeys">
+            Journeys: {journeys.label}. {journeys.disclaimer} {journeys.assumptions}.
+            {journeys.legacy && ' Recorded before searches said where each journey time came from.'}
           </li>
           <li>
             Data: {s.dataVersions.properties}; {s.dataVersions.reference}.
           </li>
-          <li>Subsidy figures: {rs.subsidy.source}</li>
+          <li id="method-subsidy">
+            Subsidy figures: {subsidy.label}. {subsidy.detail}
+          </li>
           <li>
             Record {r.seq}: <span className="hash break-all">{r.rowHash}</span>
           </li>

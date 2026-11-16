@@ -6,7 +6,8 @@ import { shortHash } from '../../audit/hash'
 import { actorNameOf, caseRefOf, decisionSeqOf, recordKind, sealedAt } from '../../audit/records'
 import { isDecisionSnapshot } from '../../audit/snapshot'
 import type { ChainCheck } from '../../audit/chain'
-import { NotAllowed, PageHeader, Section } from '../bits'
+import { IS_DEMO_BUILD, NotAllowed, PageHeader, Section } from '../bits'
+import { ExportStatus, useExporter } from '../exports'
 import { useUser } from '../../auth/session'
 import { check as permission } from '../../engine/permissions'
 
@@ -19,6 +20,8 @@ export function AuditLog() {
   const [check, setCheck] = useState<ChainCheck | null>(null)
   const [resetArmed, setResetArmed] = useState(false)
   const run = async () => setCheck(await verify())
+  const ex = useExporter()
+  const canExport = ex.allowed.ok && !ex.busy
 
   return (
     <div className="grid gap-6">
@@ -41,7 +44,10 @@ export function AuditLog() {
         </p>
       )}
 
-      <Section title={`Sealed records (${data.chain.length})`} description="Decisions, and later facts about them such as a change to consent.">
+      <Section
+        title={`Sealed records (${data.chain.length})`}
+        description="Decisions, and later facts about them: placement steps, approvals, consent changes, tasks and exports."
+      >
         {data.chain.length === 0 ? (
           <p className="text-muted">No decisions yet. Record one from a placement search and it appears here.</p>
         ) : (
@@ -91,6 +97,26 @@ export function AuditLog() {
             </table>
           </div>
         )}
+      </Section>
+
+      <Section
+        title="Export for the case system"
+        id="export-placements"
+        description="Every placement, one row each, with where it stands now, its journey and subsidy sources, and whether it is synthetic. A single decision's case note, record or PDF is exported from its audit pack. Every export is itself recorded here."
+      >
+        <div className="grid gap-2">
+          <div className="flex flex-wrap gap-2">
+            {!IS_DEMO_BUILD && (
+              <button id="export-csv-download" className="btn" disabled={!canExport} onClick={() => ex.run('placements_csv', 'download')}>
+                Download placements (CSV)
+              </button>
+            )}
+            <button id="export-csv-copy" className="btn" disabled={!canExport} onClick={() => ex.run('placements_csv', 'clipboard')}>
+              Copy placements (CSV)
+            </button>
+          </div>
+          <ExportStatus ex={ex} id="export-csv-status" />
+        </div>
       </Section>
 
       <Section title="Demonstrate tamper detection">

@@ -7,6 +7,8 @@ import { decisionRecords } from '../../audit/records'
 import { complianceLabel } from '../../engine/gates'
 import { BUDGET_LABEL, UNIT_LABEL } from '../criteria'
 import { gbp, GateList, PageHeader, SERIES, Section, TierTag } from '../bits'
+import { journeyView } from '../../audit/provenance'
+import { JourneyTag, placeSourceText, SubsidyChip, subsidyFor } from '../provenance'
 
 export function PropertyDetail({ searchId, propertyId }: { searchId: string; propertyId: string }) {
   const { getSearch, data, noteReview } = useApp()
@@ -117,7 +119,7 @@ export function PropertyDetail({ searchId, propertyId }: { searchId: string; pro
       )}
 
       <div className="grid gap-5 xl:grid-cols-2">
-        <Section title="Journeys" aside={<span className="text-xs text-muted">Estimated, public transport</span>}>
+        <Section title="Journeys" aside={<span className="text-xs text-muted">{journeyView(s).label}, public transport</span>}>
           {c.journeys.length === 0 ? (
             <p className="text-muted">No places recorded for this household.</p>
           ) : (
@@ -129,22 +131,33 @@ export function PropertyDetail({ searchId, propertyId }: { searchId: string; pro
                     <th>To</th>
                     <th className="text-right">Minutes</th>
                     <th className="text-right">km</th>
+                    <th>Source</th>
                   </tr>
                 </thead>
                 <tbody>
                   {c.journeys.map(j => (
                     <tr key={j.destinationId}>
                       <td className="whitespace-nowrap">{person(j.personId)}</td>
-                      <td>{j.name}</td>
-                      <td className="num text-right font-bold">{j.minutes ?? '—'}</td>
+                      <td>
+                        {j.name}
+                        {(() => {
+                          const d = s.household.destinations.find(x => x.id === j.destinationId)
+                          return d ? <div className="text-xs text-faint">{placeSourceText(d)}</div> : null
+                        })()}
+                      </td>
+                      <td className="num text-right font-bold">{j.minutes ?? 'No route'}</td>
                       <td className="num text-right">{j.distanceKm}</td>
+                      <td>
+                        <JourneyTag j={j} s={s} />
+                      </td>
                     </tr>
                   ))}
                   <tr>
                     <td colSpan={2} className="text-muted">
                       Last settled area ({s.household.homeAreaLabel})
                     </td>
-                    <td className="num text-right">{c.homeAreaMinutes ?? '—'}</td>
+                    <td className="num text-right">{c.homeAreaMinutes ?? 'No route'}</td>
+                    <td />
                     <td />
                   </tr>
                 </tbody>
@@ -179,7 +192,8 @@ export function PropertyDetail({ searchId, propertyId }: { searchId: string; pro
       <Section
         title="Cost, by who pays"
         aside={
-          <span className="text-xs text-muted">
+          <span className="flex flex-wrap items-center gap-2 text-xs text-muted">
+            <SubsidyChip sub={subsidyFor(s, data.rulesets)} />
             {c.cost.stayNights} nights · {c.cost.schoolDaysInStay} school days
           </span>
         }
