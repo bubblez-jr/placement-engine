@@ -3,6 +3,7 @@ import { useNav } from '../../store/nav'
 import { SCENARIOS } from '../../data/households'
 import { daysBetween, formatDate, formatDateTime, parseDate, toIsoDate } from '../../engine/dates'
 import { requiredCompliance } from '../../engine/gates'
+import { clocksNow, decisionRecords, deciderOf } from '../../audit/records'
 import { PageHeader, Section } from '../bits'
 import { Icon } from '../icons'
 
@@ -27,14 +28,15 @@ export function Home() {
   const { go } = useNav()
   const today = toIsoDate(new Date())
   const todayDate = parseDate(today)
-  const decidedSearchIds = new Set(data.chain.map(r => r.snapshot.search.id))
+  const decisions = decisionRecords(data.chain)
+  const decidedSearchIds = new Set(decisions.map(r => r.snapshot.search.id))
   const pending = data.searches.filter(s => !decidedSearchIds.has(s.id)).slice(0, 5)
-  const clocks = data.chain
-    .flatMap(r => r.snapshot.clocks.map(c => ({ c, r })))
+  const clocks = decisions
+    .flatMap(r => clocksNow(data.chain, r).map(c => ({ c, r })))
     .filter(x => x.c.status === 'open' && x.c.key !== 's202')
     .sort((a, b) => a.c.due.localeCompare(b.c.due))
-  const decisions = data.chain.length
-  const accepted = data.chain.filter(r => r.snapshot.decision.outcome === 'accepted').length
+  const decided = decisions.length
+  const accepted = decisions.filter(r => r.snapshot.decision.outcome === 'accepted').length
   const bookable = data.properties.filter(p => {
     if (parseDate(p.availableFrom) > todayDate) return false
     const sup = data.suppliers.find(s => s.id === p.supplierId)
@@ -49,10 +51,10 @@ export function Home() {
     { label: 'Available and compliant today', value: `${bookable}`, sub: `of ${data.properties.length} properties held` },
     {
       label: 'Decisions recorded',
-      value: `${decisions}`,
-      sub: decisions ? `${data.chain.filter(r => r.snapshot.decision.outcome === 'override').length} overrides` : 'none yet',
+      value: `${decided}`,
+      sub: decided ? `${decisions.filter(r => r.snapshot.decision.outcome === 'override').length} overrides` : 'none yet',
     },
-    { label: 'Recommendation accepted', value: decisions ? `${Math.round((accepted / decisions) * 100)}%` : '—', sub: 'healthy range 30–90%' },
+    { label: 'Recommendation accepted', value: decided ? `${Math.round((accepted / decided) * 100)}%` : '—', sub: 'healthy range 30–90%' },
     { label: 'Open deadlines', value: `${clocks.length}`, sub: clocks[0] ? `next ${formatDate(clocks[0].c.due)}` : 'nothing due' },
   ]
 
@@ -183,7 +185,7 @@ export function Home() {
       <Section
         title="Recent decisions"
         aside={
-          data.chain.length > 0 && (
+          decided > 0 && (
             <button className="link text-sm" onClick={() => go({ view: 'audit' })}>
               Open audit log
             </button>
@@ -191,7 +193,7 @@ export function Home() {
         }
         flush
       >
-        {data.chain.length === 0 ? (
+        {decided === 0 ? (
           <p className="px-4 py-4 text-sm text-muted sm:px-5">No decisions recorded yet. Try an example household above.</p>
         ) : (
           <div className="scroll-x">
@@ -207,7 +209,7 @@ export function Home() {
                 </tr>
               </thead>
               <tbody>
-                {[...data.chain]
+                {[...decisions]
                   .reverse()
                   .slice(0, 10)
                   .map(r => {
@@ -219,7 +221,7 @@ export function Home() {
                         <td>{r.snapshot.search.household.caseRef}</td>
                         <td>{chosen?.label ?? '—'}</td>
                         <td>{OUTCOME[d.outcome]}</td>
-                        <td>{d.officer}</td>
+                        <td>{deciderOf(r.snapshot).name}</td>
                         <td className="num whitespace-nowrap text-muted">{formatDateTime(d.decidedAt)}</td>
                       </tr>
                     )

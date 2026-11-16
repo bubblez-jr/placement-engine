@@ -3,13 +3,15 @@ import { useApp } from '../../store/app'
 import { formatDate, formatDateTime } from '../../engine/dates'
 import type { Ruleset } from '../../engine/types'
 import { shortHash } from '../../audit/hash'
-import { PageHeader, SERIES, Section } from '../bits'
+import { NotAllowed, PageHeader, SERIES, Section } from '../bits'
+import { useUser } from '../../auth/session'
+import { check, ROLE_LABEL } from '../../engine/permissions'
 
 export function Rules() {
-  const { data, activeRuleset, publishRuleset, officer } = useApp()
+  const { data, activeRuleset, publishRuleset } = useApp()
+  const user = useUser()
+  const allowed = check(user, 'publish_policy')
   const [draft, setDraft] = useState<Ruleset>(() => structuredClone(activeRuleset))
-  const [by, setBy] = useState(officer.name)
-  const [role, setRole] = useState('Head of Housing Needs')
   const [equality, setEquality] = useState('')
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const total = draft.criteria.reduce((a, c) => a + c.weight, 0)
@@ -22,10 +24,12 @@ export function Rules() {
 
   async function publish() {
     setMsg(null)
-    if (!by.trim()) return setMsg({ ok: false, text: 'Enter who signs off this version.' })
-    if (equality.trim().length < 30)
-      return setMsg({ ok: false, text: 'Record the equality assessment for this change (at least 30 characters): weights decide who gets placed where.' })
-    const next = await publishRuleset({ ...draft, signOff: { by: by.trim(), role: role.trim(), at: new Date().toISOString(), equalityNote: equality.trim() } })
+    let next
+    try {
+      next = await publishRuleset(draft, equality)
+    } catch (err) {
+      return setMsg({ ok: false, text: (err as Error).message.replace(/^There is 1 problem to fix: /, '') })
+    }
     setDraft(structuredClone(next))
     setEquality('')
     setMsg({ ok: true, text: `Published version ${next.version}. New searches use it; past decisions keep the version they used.` })
@@ -171,16 +175,15 @@ export function Rules() {
       </div>
 
       <Section title="Publish a new version">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="field">
-            <span>Signed off by</span>
-            <input id="by" className="input" value={by} onChange={e => setBy(e.target.value)} />
-          </label>
-          <label className="field">
-            <span>Role</span>
-            <input id="role2" className="input" value={role} onChange={e => setRole(e.target.value)} />
-          </label>
-        </div>
+        {allowed.ok ? (
+          <p className="text-sm">
+            Signed off by <b>{user.name}</b>, {ROLE_LABEL[user.role].toLowerCase()}, the person signed in. The version records who published it and when.
+          </p>
+        ) : (
+          <NotAllowed
+            reason={`${allowed.reason} Only the head of service or an administrator publishes policy; you can still try changes here to see their effect.`}
+          />
+        )}
         <label className="field mt-3">
           <span>Equality assessment of this change</span>
           <textarea
@@ -193,7 +196,7 @@ export function Rules() {
         </label>
         {msg && <p className={`mt-3 rounded-md px-3 py-2 ${msg.ok ? 'bg-good-soft text-good' : 'bg-bad-soft text-bad'}`}>{msg.text}</p>}
         <div className="mt-3 flex flex-wrap gap-2">
-          <button className="btn btn-primary" disabled={!changed} onClick={publish}>
+          <button id="publish" className="btn btn-primary" disabled={!changed || !allowed.ok} onClick={publish}>
             Publish version{' '}
             {(() => {
               const [a, b] = data.rulesets[data.rulesets.length - 1].version.split('.').map(Number)

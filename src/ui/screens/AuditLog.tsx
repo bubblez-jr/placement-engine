@@ -3,12 +3,19 @@ import { useApp } from '../../store/app'
 import { useNav } from '../../store/nav'
 import { formatDateTime } from '../../engine/dates'
 import { shortHash } from '../../audit/hash'
+import { actorNameOf, caseRefOf, recordKind, sealedAt } from '../../audit/records'
+import { isDecisionSnapshot } from '../../audit/snapshot'
 import type { ChainCheck } from '../../audit/chain'
-import { PageHeader, Section } from '../bits'
+import { NotAllowed, PageHeader, Section } from '../bits'
+import { useUser } from '../../auth/session'
+import { check as permission } from '../../engine/permissions'
 
 export function AuditLog() {
   const { data, verify, tamper, undoTamper, resetDemo } = useApp()
+  const user = useUser()
   const { go } = useNav()
+  const canTamper = permission(user, 'run_tamper_demo')
+  const canReset = permission(user, 'reset_demo')
   const [check, setCheck] = useState<ChainCheck | null>(null)
   const [resetArmed, setResetArmed] = useState(false)
   const run = async () => setCheck(await verify())
@@ -34,7 +41,7 @@ export function AuditLog() {
         </p>
       )}
 
-      <Section title={`Sealed decisions (${data.chain.length})`}>
+      <Section title={`Sealed records (${data.chain.length})`} description="Decisions, and later facts about them such as a change to consent.">
         {data.chain.length === 0 ? (
           <p className="text-muted">No decisions yet. Record one from a placement search and it appears here.</p>
         ) : (
@@ -45,8 +52,8 @@ export function AuditLog() {
                   <th>#</th>
                   <th>Sealed</th>
                   <th>Case</th>
-                  <th>Outcome</th>
-                  <th>Officer</th>
+                  <th>Record</th>
+                  <th>By</th>
                   <th>Hash</th>
                   <th>Links to</th>
                 </tr>
@@ -55,16 +62,23 @@ export function AuditLog() {
                 {[...data.chain].reverse().map(r => (
                   <tr key={r.seq}>
                     <td>
-                      <button className="link num" onClick={() => go({ view: 'report', seq: r.seq })}>
+                      <button className="link num" onClick={() => go({ view: 'report', seq: isDecisionSnapshot(r.snapshot) ? r.seq : r.snapshot.about.seq })}>
                         {r.seq}
                       </button>
                     </td>
-                    <td className="num whitespace-nowrap">{formatDateTime(r.snapshot.frozenAt)}</td>
-                    <td>{r.snapshot.search.household.caseRef}</td>
+                    <td className="num whitespace-nowrap">{formatDateTime(sealedAt(r))}</td>
+                    <td>{caseRefOf(r)}</td>
                     <td>
-                      {r.snapshot.decision.outcome === 'accepted' ? 'Accepted' : r.snapshot.decision.outcome === 'override' ? 'Override' : 'None suitable'}
+                      {isDecisionSnapshot(r.snapshot)
+                        ? r.snapshot.decision.outcome === 'accepted'
+                          ? 'Accepted'
+                          : r.snapshot.decision.outcome === 'override'
+                            ? 'Override'
+                            : 'None suitable'
+                        : '—'}
+                      <div className="text-xs text-muted">{recordKind(r)}</div>
                     </td>
-                    <td>{r.snapshot.decision.officer}</td>
+                    <td>{actorNameOf(r)}</td>
                     <td className="hash">{shortHash(r.rowHash)}</td>
                     <td className="hash text-muted">{r.seq === 1 ? 'start' : shortHash(r.prevHash)}</td>
                   </tr>
@@ -80,11 +94,13 @@ export function AuditLog() {
           For demos only. This edits the officer’s reason on record #1 without resealing it, the way someone might change a record after a complaint. Then check
           the seals.
         </p>
+        {!canTamper.ok && <NotAllowed reason={canTamper.reason} className="mb-3" />}
         <div className="flex flex-wrap gap-2">
           {!data.tamperBackup ? (
             <button
+              id="tamper"
               className="btn"
-              disabled={data.chain.length === 0}
+              disabled={data.chain.length === 0 || !canTamper.ok}
               onClick={() => {
                 tamper()
                 setCheck(null)
@@ -94,7 +110,9 @@ export function AuditLog() {
             </button>
           ) : (
             <button
+              id="untamper"
               className="btn"
+              disabled={!canTamper.ok}
               onClick={() => {
                 undoTamper()
                 setCheck(null)
@@ -111,8 +129,9 @@ export function AuditLog() {
 
       <Section title="Reset the demo">
         <p className="mb-3 text-muted">Clears every search and decision in this browser and reloads the example data.</p>
+        {!canReset.ok && <NotAllowed reason={`${canReset.reason} In the demo, sign in as the administrator to reset.`} className="mb-3" />}
         {!resetArmed ? (
-          <button className="btn" onClick={() => setResetArmed(true)}>
+          <button id="reset" className="btn" disabled={!canReset.ok} onClick={() => setResetArmed(true)}>
             Reset demo data
           </button>
         ) : (

@@ -5,7 +5,9 @@ import { requiredCompliance } from '../../engine/gates'
 import { parsePropertiesCsv, propertiesToCsv } from '../../data/csv'
 import type { Property } from '../../engine/types'
 import { UNIT_LABEL } from '../criteria'
-import { gbp, PageHeader, Section } from '../bits'
+import { gbp, NotAllowed, PageHeader, Section } from '../bits'
+import { useUser } from '../../auth/session'
+import { check } from '../../engine/permissions'
 
 function complianceStatus(p: Property, req: string[], today: Date): { cls: string; text: string } {
   const missing = req.filter(t => !p.compliance.some(c => c.type === t))
@@ -20,7 +22,10 @@ function complianceStatus(p: Property, req: string[], today: Date): { cls: strin
 }
 
 export function Properties() {
-  const { data, activeRuleset, confirmAvailability, replaceProperties, officer } = useApp()
+  const { data, activeRuleset, confirmAvailability, replaceProperties } = useApp()
+  const user = useUser()
+  const canConfirm = check(user, 'confirm_availability')
+  const canImport = check(user, 'edit_properties')
   const [csv, setCsv] = useState('')
   const [mode, setMode] = useState<'add' | 'replace'>('add')
   const [result, setResult] = useState<{ ok: boolean; text: string[] } | null>(null)
@@ -28,8 +33,12 @@ export function Properties() {
   const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()))
 
   function runImport() {
-    const r = parsePropertiesCsv(csv, new Date().toISOString(), `${officer.name} (import)`)
-    if (r.properties.length) replaceProperties(r.properties, mode)
+    const r = parsePropertiesCsv(csv, new Date().toISOString(), `${user.name} (import)`)
+    try {
+      if (r.properties.length) replaceProperties(r.properties, mode)
+    } catch (err) {
+      return setResult({ ok: false, text: [(err as Error).message] })
+    }
     setResult({
       ok: r.errors.length === 0 && r.properties.length > 0,
       text: [r.properties.length ? `Imported ${r.properties.length} propert${r.properties.length === 1 ? 'y' : 'ies'}.` : 'Nothing imported.', ...r.errors],
@@ -81,9 +90,11 @@ export function Properties() {
                       <span className={`chip ${stale ? 'chip-warn' : 'chip-plain'}`}>
                         {age < 24 ? `${Math.max(1, Math.round(age))} h ago` : `${Math.round(age / 24)} days ago`}
                       </span>
-                      <button className="btn-quiet btn ml-1 text-xs" onClick={() => confirmAvailability(p.id)}>
-                        Confirm now
-                      </button>
+                      {canConfirm.ok && (
+                        <button className="btn-quiet btn ml-1 text-xs" onClick={() => confirmAvailability(p.id)}>
+                          Confirm now<span className="sr-only"> availability of {p.label}</span>
+                        </button>
+                      )}
                     </td>
                     <td>
                       <span className={`chip ${cs.cls}`}>{cs.text}</span>
@@ -97,7 +108,10 @@ export function Properties() {
         </div>
       </Section>
 
+      {!canConfirm.ok && <NotAllowed reason={canConfirm.reason} />}
+
       <Section title="Import from a spreadsheet">
+        {!canImport.ok && <NotAllowed reason={`${canImport.reason} Supply and compliance officers and administrators import properties.`} className="mb-3" />}
         <p className="mb-2 text-sm text-muted">
           Paste CSV with a header row. Required: id, label, lat, lng, district, brma, bedrooms, nightly, available_from (YYYY-MM-DD). Certificates as expiry
           dates (gas_expires, eicr_expires), epc_band, inspected (yes/no).
@@ -134,7 +148,7 @@ export function Properties() {
           <label className="flex items-center gap-2">
             <input id="mode-replace" type="radio" name="mode" checked={mode === 'replace'} onChange={() => setMode('replace')} /> Replace the whole inventory
           </label>
-          <button className="btn btn-primary" disabled={!csv.trim()} onClick={runImport}>
+          <button className="btn btn-primary" disabled={!csv.trim() || !canImport.ok} onClick={runImport}>
             Import
           </button>
         </div>

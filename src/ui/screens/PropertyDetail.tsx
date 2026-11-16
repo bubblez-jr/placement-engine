@@ -3,6 +3,7 @@ import { useApp } from '../../store/app'
 import { useNav } from '../../store/nav'
 import { formatDate, formatDateTime } from '../../engine/dates'
 import { whyHere } from '../../engine/explain'
+import { decisionRecords } from '../../audit/records'
 import { complianceLabel } from '../../engine/gates'
 import { BUDGET_LABEL, UNIT_LABEL } from '../criteria'
 import { gbp, GateList, PageHeader, SERIES, Section, TierTag } from '../bits'
@@ -21,7 +22,7 @@ export function PropertyDetail({ searchId, propertyId }: { searchId: string; pro
   const rec = s.candidates.find(x => x.propertyId === s.recommendedId)
   const supplier = data.suppliers.find(x => x.id === p.supplierId)
   const person = (id: string) => s.household.members.find(m => m.id === id)?.label ?? id
-  const decided = data.chain.some(r => r.snapshot.search.id === s.id)
+  const decided = decisionRecords(data.chain).some(r => r.snapshot.search.id === s.id)
 
   return (
     <div className="grid gap-6">
