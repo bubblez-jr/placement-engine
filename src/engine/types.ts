@@ -28,7 +28,28 @@ export interface Person {
   /** Special educational needs (affects home-to-school transport) */
   send?: boolean
   employed?: boolean
+  /** Opens the access needs questions for this person (see `accessAssessments`) */
   wheelchairUser?: boolean
+}
+
+// ---------- People who use the system ----------
+
+export type StaffRole = 'ta_officer' | 'ooh_officer' | 'team_manager' | 'head_of_service' | 'compliance_officer' | 'auditor' | 'admin'
+
+export interface StaffUser {
+  id: string
+  name: string
+  role: StaffRole
+  team: string
+}
+
+/** Who did something, as frozen into a record: always the signed-in person, never a form field. */
+export interface ActorRef {
+  userId: string
+  name: string
+  role: StaffRole
+  /** The role as shown to people when the record was made */
+  roleLabel: string
 }
 
 export type DestinationKind = 'school' | 'work' | 'medical' | 'care' | 'support'
@@ -48,6 +69,26 @@ export interface Destination {
 
 export type AccessNeed = 'step_free' | 'wheelchair_accessible' | 'ground_floor_or_lift' | 'adapted_bathroom'
 
+/** The questions an access needs panel asks: the four needs, plus two that change other checks. */
+export type AccessQuestion = AccessNeed | 'assistance_dog' | 'equipment_or_carer'
+
+export type YesNo = 'yes' | 'no'
+
+/**
+ * One person's (or the household's) access answers. Each question needs an
+ * explicit yes or no; nothing is pre-selected. The gates use the union of the
+ * "yes" answers, so a declared need cannot be ignored.
+ */
+export interface AccessAssessment {
+  /** A member id, or 'household' when the household's disability flag opened the panel */
+  subject: string
+  answers: Partial<Record<AccessQuestion, YesNo>>
+  /** What the equipment or carer is, when that answer is yes */
+  note?: string
+  answeredBy?: ActorRef
+  answeredAt?: IsoDateTime
+}
+
 export type PriorityFlag = 'child_protection_plan' | 'exam_year' | 'ongoing_treatment' | 'employment' | 'caring_duties' | 'domestic_abuse' | 'disability'
 
 export interface SafeguardingZone {
@@ -66,7 +107,14 @@ export interface Household {
   homeAreaLabel: string
   needFrom: IsoDate
   expectedNights: number
+  /**
+   * Household-level needs from the earlier version (schema 1), when access was
+   * a separate tick-box list. Still applied so old or imported data is never
+   * silently ignored; new households use `accessAssessments`.
+   */
   accessNeeds: AccessNeed[]
+  /** Access answers per person (or the household). Absent in schema-1 records. */
+  accessAssessments?: AccessAssessment[]
   petsMustBeAccommodated: boolean
   flags: PriorityFlag[]
   safeguardingZones: SafeguardingZone[]
@@ -213,6 +261,8 @@ export interface Ruleset {
     role: string
     at: IsoDateTime
     equalityNote: string
+    /** The signed-in person who published this version (absent on the seeded version and schema-1 data) */
+    actor?: ActorRef
   }
   /** SHA-256 of the canonical rule-set without this field */
   hash?: string
@@ -352,6 +402,19 @@ export interface SearchResult {
   sensitivity: { status: 'robust' | 'close_call' | 'n/a'; flips: SensitivityFlip[] }
   explanation: Explanation
   dataVersions: { properties: string; reference: string }
+  /** Warnings about the household details, frozen at search time. Absent in schema-1 records. */
+  validation?: Issue[]
+  /** Who ran the search. Absent in schema-1 records. */
+  searchedBy?: ActorRef
+}
+
+/** A problem with entered or imported data. `path` is the form control id the officer fixes it in. */
+export interface Issue {
+  path: string
+  message: string
+  severity: 'error' | 'warning'
+  /** Optional pointer to related work, e.g. an open search for the same case */
+  link?: { searchId?: string; seq?: number }
 }
 
 export type OverrideReason =
@@ -363,13 +426,32 @@ export type OverrideReason =
   | 'manager_instruction'
   | 'other'
 
-export interface Decision {
+export type ConsentStatus = 'given' | 'refused' | 'not_asked'
+export type ConsentMethod = 'in_person' | 'phone' | 'written'
+
+/**
+ * Consent to tell the children's school, GP and health visitor about the
+ * placement (Housing Act 1996 s213AA). Recorded by an officer who actually
+ * asked; never assumed. A later change is a new chain event, not an edit.
+ */
+export interface ConsentRecord {
+  status: ConsentStatus
+  /** Label of the adult who gave or refused consent ("Adult 1"); given and refused only */
+  givenBy?: string
+  /** How it was asked; given and refused only */
+  method?: ConsentMethod
+  /** Why it has not been asked yet; not_asked only */
+  reason?: string
+  note?: string
+  recordedBy: ActorRef
+  recordedAt: IsoDateTime
+}
+
+interface DecisionBase {
   outcome: 'accepted' | 'override' | 'no_suitable'
   chosenPropertyId: string | null
   overrideReason?: OverrideReason
   reasonText: string
-  officer: string
-  officerRole: string
   decidedAt: IsoDateTime
   /** What the officer saw before deciding: the record of meaningful human review */
   reviewed: {
@@ -379,7 +461,26 @@ export interface Decision {
     confirmedFullListReviewed: boolean
   }
   startDate: IsoDate
+}
+
+/** As sealed by schema 1 (`placement-decision/1`): free-text officer and a tick-box consent. Read only. */
+export interface DecisionV1 extends DecisionBase {
+  officer: string
+  officerRole: string
   consentToNotifyServices: boolean
+}
+
+/** As sealed from V2 (`placement-decision/2`): the signed-in actor and a recorded consent. */
+export interface DecisionV2 extends DecisionBase {
+  decidedBy: ActorRef
+  /** null when the household has no children, so s213AA does not apply */
+  consent: ConsentRecord | null
+}
+
+export type Decision = DecisionV1 | DecisionV2
+
+export function isDecisionV2(d: Decision): d is DecisionV2 {
+  return 'decidedBy' in d
 }
 
 export interface StatutoryClock {

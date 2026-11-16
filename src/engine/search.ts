@@ -3,7 +3,8 @@ import { costPlacement } from './cost'
 import { runGates } from './gates'
 import { effectiveWeights, locationTier, rescore, scoreCandidate, TIER_LABEL } from './scoring'
 import { buildExplanation } from './explain'
-import type { Candidate, CriterionKey, Household, JourneyResult, Property, Ruleset, SearchResult, SensitivityFlip, Supplier } from './types'
+import { validateHousehold, ValidationError, type ValidationContext } from './validate'
+import type { ActorRef, Candidate, CriterionKey, Household, IsoDate, JourneyResult, Property, Ruleset, SearchResult, SensitivityFlip, Supplier } from './types'
 import type { TravelProvider } from '../travel/provider'
 
 export interface SearchInput {
@@ -13,12 +14,14 @@ export interface SearchInput {
   ruleset: Ruleset & { hash: string }
   travel: TravelProvider
   now: string
+  /** The officer's calendar date (YYYY-MM-DD); defaults to the date part of `now` */
+  today?: IsoDate
   dataVersions: { properties: string; reference: string }
-  id?: string
-}
-
-function newId(): string {
-  return `S-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
+  /** Supplied by the caller: the engine never reads the clock or a random source */
+  id: string
+  /** Other open work, so a duplicate case reference is pointed out */
+  context?: ValidationContext
+  searchedBy?: ActorRef
 }
 
 /** Pick the recommendation: highest suitability; within the tie-break band, lowest public cost. */
@@ -43,7 +46,11 @@ function renormalise(w: Record<CriterionKey, number>): Record<CriterionKey, numb
 }
 
 export async function runSearch(input: SearchInput): Promise<SearchResult> {
-  const { household: h, properties, suppliers, ruleset: rs, travel, now } = input
+  const { properties, suppliers, ruleset: rs, travel, now } = input
+  // Validation lives here, not in the form, so an import cannot bypass it.
+  const issues = validateHousehold(input.household, input.today ?? now.slice(0, 10), input.context)
+  if (issues.some(i => i.severity === 'error')) throw new ValidationError(issues)
+  const h: Household = { ...input.household, caseRef: input.household.caseRef.trim(), accessAssessments: input.household.accessAssessments ?? [] }
   const need = bedroomNeed(h.members)
   const weights = effectiveWeights(h, rs)
   const personLabel = (id: string) => h.members.find(m => m.id === id)?.label ?? id
@@ -141,7 +148,7 @@ export async function runSearch(input: SearchInput): Promise<SearchResult> {
   }
 
   const result: SearchResult = {
-    id: input.id ?? newId(),
+    id: input.id,
     createdAt: now,
     household: h,
     rulesetId: rs.id,
@@ -162,6 +169,8 @@ export async function runSearch(input: SearchInput): Promise<SearchResult> {
     sensitivity: { status: !rec || eligible.length < 2 ? 'n/a' : flips.length === 0 ? 'robust' : 'close_call', flips },
     explanation: { headline: '', reasons: [], cost: [], caveats: [] },
     dataVersions: input.dataVersions,
+    validation: issues,
+    ...(input.searchedBy ? { searchedBy: input.searchedBy } : {}),
   }
   result.explanation = buildExplanation(result, rs)
   return result

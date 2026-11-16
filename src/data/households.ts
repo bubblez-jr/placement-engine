@@ -3,7 +3,8 @@ import type { Destination, Household } from '../engine/types'
 import { placeById } from './places'
 
 // SYNTHETIC example households. Pseudonymous case references and labels only:
-// the council's case system holds identities.
+// the council's case system holds identities. Every one passes validateHousehold
+// on the day it is loaded (tests/validate.test.ts checks this).
 
 function dest(id: string, personId: string, placeId: string, arriveBy = '08:45', daysPerWeek = 5): Destination {
   const p = placeById(placeId)!
@@ -66,7 +67,7 @@ export const SCENARIOS: Scenario[] = [
   {
     id: 'access',
     title: 'Wheelchair user and two children, fleeing abuse',
-    summary: 'Hard access needs, an assistance dog and a safeguarding exclusion zone.',
+    summary: 'Access needs answered for the wheelchair user, an assistance dog and a safeguarding exclusion zone.',
     household: today => ({
       caseRef: 'HN-26-0388',
       members: [
@@ -79,8 +80,22 @@ export const SCENARIOS: Scenario[] = [
       homeAreaLabel: 'Demo Borough (restricted)',
       needFrom: today,
       expectedNights: 240,
-      accessNeeds: ['wheelchair_accessible', 'adapted_bathroom', 'step_free'],
-      petsMustBeAccommodated: true,
+      accessNeeds: [],
+      // Example answers, as the officer would record them in the access needs panel.
+      accessAssessments: [
+        {
+          subject: 'a1',
+          answers: {
+            wheelchair_accessible: 'yes',
+            step_free: 'yes',
+            ground_floor_or_lift: 'yes',
+            adapted_bathroom: 'yes',
+            assistance_dog: 'yes',
+            equipment_or_carer: 'no',
+          },
+        },
+      ],
+      petsMustBeAccommodated: false,
       flags: ['domestic_abuse', 'disability'],
       safeguardingZones: [{ id: 'z1', center: { lat: 51.565, lng: -0.01 }, radiusKm: 2 }],
       maxHouseholdContributionWeekly: 10,

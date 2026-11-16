@@ -1,7 +1,8 @@
 import { addDays, formatDate, hoursBetween, parseDate } from './dates'
 import { haversineKm } from './geo'
 import { isFamilyHousehold } from './bedrooms'
-import type { ComplianceItem, ComplianceType, GateCheck, Household, IsoDateTime, Property, Ruleset, Supplier } from './types'
+import { ACCESS_NEED_LABEL, assistanceDogFor, effectiveAccessNeeds, joinNames, needSentence } from './access'
+import type { AccessNeed, ComplianceItem, ComplianceType, GateCheck, Household, IsoDateTime, Property, Ruleset, Supplier } from './types'
 
 // Legal references are what the research found; a solicitor should confirm
 // the wording before a pilot (see docs/PILOT-READINESS.md).
@@ -144,8 +145,9 @@ export function runGates(h: Household, p: Property, supplier: Supplier | undefin
       LAW.sizePolicy,
     ),
   )
+  const needs = effectiveAccessNeeds(h)
   if (p.reservedForAccessNeeds) {
-    const needsIt = h.accessNeeds.includes('wheelchair_accessible') || h.accessNeeds.includes('adapted_bathroom')
+    const needsIt = needs.some(n => n.need === 'wheelchair_accessible' || n.need === 'adapted_bathroom')
     checks.push(
       block(
         'RESERVED_ACCESSIBLE',
@@ -157,20 +159,33 @@ export function runGates(h: Household, p: Property, supplier: Supplier | undefin
   }
   checks.push(block('OVER_CAPACITY', p.maxOccupants >= h.members.length, `Sleeps ${p.maxOccupants}; household of ${h.members.length}`, LAW.space))
 
-  // Access must-haves
-  const access: [(typeof h.accessNeeds)[number], GateCheck['code'], boolean, string][] = [
-    ['step_free', 'ACCESS_STEP_FREE', p.stepFree, 'Step-free access'],
-    ['wheelchair_accessible', 'ACCESS_WHEELCHAIR', p.wheelchairAccessible, 'Wheelchair accessible'],
-    ['ground_floor_or_lift', 'ACCESS_GROUND_OR_LIFT', p.floor === 0 || p.lift, 'Ground floor or lift'],
-    ['adapted_bathroom', 'ACCESS_ADAPTED_BATHROOM', p.adaptedBathroom, 'Adapted bathroom'],
-  ]
-  for (const [need, code, ok, label] of access) {
-    if (h.accessNeeds.includes(need)) {
-      checks.push(block(code, ok, ok ? `${label}: yes` : `${label}: needed, not available`, LAW.equality))
-    }
+  // Access must-haves: the union of every "yes" answer, naming whose need it is
+  const access: Record<AccessNeed, [GateCheck['code'], boolean]> = {
+    step_free: ['ACCESS_STEP_FREE', p.stepFree],
+    wheelchair_accessible: ['ACCESS_WHEELCHAIR', p.wheelchairAccessible],
+    ground_floor_or_lift: ['ACCESS_GROUND_OR_LIFT', p.floor === 0 || p.lift],
+    adapted_bathroom: ['ACCESS_ADAPTED_BATHROOM', p.adaptedBathroom],
+  }
+  for (const n of needs) {
+    const [code, ok] = access[n.need]
+    checks.push(
+      block(code, ok, ok ? `${ACCESS_NEED_LABEL[n.need]}: yes (${joinNames(n.who)})` : `${needSentence(n)}: this property does not have it`, LAW.equality),
+    )
   }
 
-  if (h.petsMustBeAccommodated) {
+  const dogs = assistanceDogFor(h)
+  if (dogs.length > 0) {
+    checks.push(
+      block(
+        'PETS',
+        p.petsAllowed,
+        p.petsAllowed
+          ? `Assistance dog accepted (${joinNames(dogs)})`
+          : `${joinNames(dogs)} ${dogs.length === 1 ? 'has' : 'have'} an assistance dog: not accepted here`,
+        LAW.pets,
+      ),
+    )
+  } else if (h.petsMustBeAccommodated) {
     checks.push(block('PETS', p.petsAllowed, p.petsAllowed ? 'Pets accepted' : 'Pets not accepted', LAW.pets))
   }
 
