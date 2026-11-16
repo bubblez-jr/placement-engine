@@ -63,7 +63,7 @@ export function consentSummary(v: ConsentView): string {
   if (v.kind === 'legacy')
     return `Consent recorded as ${v.consented ? 'yes' : 'no'} under the earlier version (a tick-box: who gave it and how were not recorded)`
   const c = v.consent
-  if (c.status === 'not_asked') return `${CONSENT_STATUS_LABEL.not_asked}: ${c.reason ?? ''}`
+  if (c.status === 'not_asked') return `${CONSENT_STATUS_LABEL.not_asked}: ${(c.reason ?? '').replace(/[.\s]+$/, '')}`
   return `${CONSENT_STATUS_LABEL[c.status]} by ${c.givenBy}, ${c.method ? CONSENT_METHOD_LABEL[c.method].toLowerCase() : 'method not recorded'}`
 }
 
