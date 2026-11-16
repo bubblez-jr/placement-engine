@@ -39,10 +39,11 @@ Read first: `CLAUDE.md`, `README.md`, `docs/HOW-IT-DECIDES.md`, `docs/ARCHITECTU
 - Seed a synthetic staff directory: two TA officers, an out-of-hours officer, a team manager, a head of service (policy owner), a supply/compliance officer, an auditor (read-only) and an admin. Names are invented and labelled synthetic.
 - `src/engine/permissions.ts`: `can(user, action, context?)`, pure and exhaustively tested as a role × action matrix. Actions cover at least: run a search, record a decision, approve an exception, publish policy, import or edit properties, confirm availability, act on a placement, complete or reassign a task, view the audit log, run the tamper demo, reset demo data, import a household, export records.
   - Officers search and decide. Managers and the head of service approve exceptions. Only the head of service (and admin) publishes policy. The auditor reads everything and changes nothing. Nobody approves their own decision.
-- An `AuthProvider` interface with one implementation today, `DemoAuth`: a sign-in screen where you choose a demo user. The screen says plainly that this is a demo sign-in with no password and that real sign-in (council single sign-on with MFA) comes with the hosted pilot. The session persists per browser tab group and there is a sign-out.
+- An `AuthProvider` interface with one implementation today, `DemoAuth`: a sign-in screen where you choose a demo user. The screen says plainly that this is a demo sign-in with no password and that real sign-in (council single sign-on with MFA) comes with the hosted pilot. The session lasts for the browser tab (sessionStorage) and there is a sign-out.
 - The app is unusable until signed in. The rail shows the signed-in person and role, with a "Switch user" control so a demo can show officer and manager views.
 - Every store action takes its actor from the session, never from a form field. Remove the free-text name and role inputs from the decision screen and from "publish policy". Decisions, approvals, task completions and policy versions record `{ userId, name, role }` of the signed-in person.
 - The store rejects any action the actor may not take (throw a typed `PermissionError`; the UI shows a plain message). Hide or disable controls the user cannot use, with a short reason on disabled ones.
+- Built: demo-only actions are also in the matrix. Resetting demo data is admin only; the tamper demonstration is open to every role except the auditor. Admin runs the system and the policy file but does not search, decide or approve.
 
 ### 1.2 Form validation (point 1)
 
@@ -56,7 +57,7 @@ Read first: `CLAUDE.md`, `README.md`, `docs/HOW-IT-DECIDES.md`, `docs/ARCHITECTU
 
 Today `Person.wheelchairUser` changes nothing: only the separate household tick-boxes reach the gates. Fix the model so a declared need cannot be silently ignored.
 
-- When any member is marked as a wheelchair user, or the household has the disability flag, the form opens an **access needs** panel for that person (or the household) with one explicit yes/no answer per need: wheelchair accessible, step-free access, ground floor or lift, adapted bathroom. No answer is pre-selected. Unanswered questions are a validation error.
+- When any member is marked as a wheelchair user, or the household has the disability flag, the form opens an **access needs** panel for that person (or, when the flag is set and nobody is marked as a wheelchair user, for the household) with one explicit yes/no answer per need: wheelchair accessible, step-free access, ground floor or lift, adapted bathroom. No answer is pre-selected. Unanswered questions are a validation error.
 - Store the answers per person (who needs what, answered by which officer, when). The household's effective access needs are the union of all "yes" answers; the gates in `src/engine/gates.ts` consume that union, and each failing gate names whose need it is by pseudonymous label ("Adult 1 needs step-free access").
 - The "reserved accessible unit" rule keys off the effective needs.
 - Also ask, when a wheelchair user or the disability flag is present: is an assistance dog part of the household (drives the pets gate), and is there equipment or a carer that changes the bedroom need (a yes adds a note and a warning for now; do not change the bedroom calculation without a tested rule).
@@ -65,14 +66,14 @@ Today `Person.wheelchairUser` changes nothing: only the separate household tick-
 
 ### 1.4 Consent is recorded, never assumed (point 4)
 
-- Replace the pre-ticked boolean with a consent record: `status: 'given' | 'refused' | 'not_asked'`, `givenBy` (which adult in the household, by label), `method` (in person, phone, written), `recordedBy` (signed-in officer), `recordedAt`, and a note. No default. Where the household includes children the officer must choose before recording a decision.
-- `not_asked` needs a reason and creates a follow-up (a task in phase 2; until then a clock entry) inside the s213AA window. `refused` suppresses the notification draft and says so.
+- Replace the pre-ticked boolean with a consent record: `status: 'given' | 'refused' | 'not_asked'`, `givenBy` (which adult in the household, by label), `method` (in person, phone, written), `recordedBy` (signed-in officer), `recordedAt`, and a note. No default. Where the household includes children the officer must choose before recording a decision that places them. (A "no suitable option" decision places nobody, so s213AA does not arise and consent is not asked.)
+- `not_asked` needs a reason and creates a follow-up (a task in phase 2; until then a clock entry, 7 days after the start) inside the s213AA window. `refused` suppresses the notification draft and says so.
 - Consent can be updated later as a new chain event (who, when, what changed); the original record is not edited.
 - Schema-1 snapshots with the old boolean still render ("consent recorded as yes/no under the earlier version").
 
 ### Phase 1 also
 
-- Storage schema 2 and migration; chain payload union and `placement-decision/2`.
+- Storage schema 2 and migration; chain payload union and `placement-decision/2`. Built: schema 2 is stored under a new key (`placement-engine/v2`) and the schema-1 copy is left in place, so a browser that goes back to the earlier deployment loses nothing. The chain record keeps the key `snapshot` for its payload.
 - Update the five example households, the walkthrough, `docs/HOW-IT-DECIDES.md` and the README screenshots list.
 
 ## Phase 2: the booking and what follows it (points 3, 5, 6b, 7, 9)
