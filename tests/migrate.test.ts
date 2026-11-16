@@ -1,10 +1,27 @@
 import { describe, expect, it } from 'vitest'
 import schema1 from './fixtures/schema1-localstorage.json'
+import schema2 from './fixtures/schema2-localstorage.json'
 import { verifyChain } from '../src/audit/chain'
-import { clocksNow, consentAtDecision, consentSummary, currentConsent, decisionRecords, deciderOf, recordKind } from '../src/audit/records'
+import {
+  approvalOf,
+  clocksNow,
+  consentAtDecision,
+  consentSummary,
+  currentConsent,
+  decisionRecords,
+  deciderOf,
+  describeEvent,
+  placementBaseOf,
+  placementOf,
+  placementsFrom,
+  recordKind,
+  tasksFrom,
+} from '../src/audit/records'
+import { addHours } from '../src/engine/dates'
+import { occupancyOf } from '../src/engine/occupancy'
 import { isDecisionSnapshot } from '../src/audit/snapshot'
 import { STAFF } from '../src/data/staff'
-import { cmdDecide, cmdUpdateConsent, type CommandCtx } from '../src/store/commands'
+import { cmdDecide, cmdTransition, cmdUpdateConsent, type CommandCtx } from '../src/store/commands'
 import { KEY_V1, KEY_V2, loadStored, migrate } from '../src/store/migrate'
 
 // tests/fixtures/schema1-localstorage.json was written by the main-branch (schema 1)
@@ -104,5 +121,80 @@ describe('new records after old ones', () => {
     expect(clocksNow(d.chain, rec2).find(c => c.key === 's213aa')!.label).toBe("Notify the children's school(s), GP and health visitor")
     expect(rec2.snapshot.clocks.find(c => c.key === 's213aa')!.label).toMatch(/Ask again/)
     expect(d.chain.filter(r => !isDecisionSnapshot(r.snapshot))).toHaveLength(1)
+  })
+})
+
+// tests/fixtures/schema2-localstorage.json was written by the phase 1 code (commit
+// 2e441b3) through its own commands: three decisions (one with a later consent
+// event) sealed as placement-decision/2 without `terms`, one of them a pregnant
+// woman placed in a shared annex, and an open search.
+describe('decisions sealed before placements were tracked', () => {
+  const v1 = () => migrate(raw(), NOW)!
+  const v2 = () => migrate(structuredClone(schema2), NOW)!
+
+  it('the schema-2 fixture is genuine phase 1 data: no terms, and its chain verifies', async () => {
+    const d = v2()
+    expect(d.chain.map(r => r.snapshot.schema)).toEqual(['placement-decision/2', 'placement-decision/2', 'placement-event/1', 'placement-decision/2'])
+    expect(decisionRecords(d.chain).every(r => r.snapshot.schema === 'placement-decision/2' && r.snapshot.terms === undefined)).toBe(true)
+    expect(await verifyChain(d.chain)).toEqual({ ok: true, checked: 4 })
+  })
+
+  it('each becomes a placement held from its decision time under the default policy, with no exceptions', () => {
+    for (const [d, firstAt] of [
+      [v1(), '2026-11-10T10:00:00.000Z'],
+      [v2(), '2026-11-12T10:00:00.000Z'],
+    ] as const) {
+      const r = decisionRecords(d.chain)[0]
+      const base = placementBaseOf(r)!
+      expect(base).toMatchObject({ legacy: true, exceptions: [], approvalRequired: false })
+      expect(base.holdUntil).toBe(addHours(r.snapshot.decision.decidedAt, 24))
+      expect(placementOf(d.chain, r, firstAt)!.state).toBe('held')
+      expect(approvalOf(d.chain, r).status).toBe('not_required')
+    }
+  })
+
+  it('days later their holds have expired: the properties are free and nothing crashes', () => {
+    for (const d of [v1(), v2()]) {
+      const ps = placementsFrom(d.chain, NOW)
+      expect(ps.map(p => p.state).every(s => s === 'hold_expired')).toBe(true)
+      expect(occupancyOf(ps, NOW)).toEqual([])
+      const ts = tasksFrom(d.chain, d.properties, d.rulesets[0], NOW)
+      expect(ts.filter(t => t.seq !== undefined && t.kind !== 'certificate')).toEqual([])
+    }
+  })
+
+  it('a schema-1 decision has no signed-in decider: its tasks go to the officers’ queue', () => {
+    const d = v1()
+    const t = tasksFrom(d.chain, d.properties, d.rulesets[0], '2026-11-11T08:00:00.000Z').find(x => x.id === 'hold:1')!
+    expect(t.owner).toEqual({ kind: 'role', role: 'ta_officer' })
+    expect(placementBaseOf(decisionRecords(d.chain)[0])!.decidedBy).toBeNull()
+  })
+
+  it('a phase 1 shared-annex placement still in its hold gets the ladder, saying no plan was recorded', () => {
+    const d = v2()
+    const r = decisionRecords(d.chain).find(x => x.seq === 4)!
+    const base = placementBaseOf(r)!
+    expect(base).toMatchObject({ sixWeekRule: true, propertyId: 'P06' })
+    const ts = tasksFrom(d.chain, d.properties, d.rulesets[0], '2026-11-13T08:00:00.000Z').filter(t => t.seq === 4)
+    expect(ts.map(t => t.id)).toEqual(['bnb-review:4:1'])
+    expect(ts[0].owner).toEqual({ kind: 'user', userId: 'u-ooh-1', name: 'Dele Adeyemi', role: 'ooh_officer' })
+    expect(ts.find(t => t.kind === 'bnb_review')!.detail).toBe('No move-on plan was recorded under the earlier version.')
+  })
+
+  it('a phase 1 decision inside its hold can be taken through the lifecycle; nothing sealed is edited', async () => {
+    let d = v2()
+    const before = JSON.stringify(d.chain)
+    const ctx = { user: STAFF.find(s => s.id === 'u-ta-1')!, now: '2026-11-12T15:00:00.000Z', today: '2026-11-12' }
+    d = (await cmdTransition(d, ctx, 1, { action: 'confirm_provider', contactName: 'Mo Patel', providerReference: 'NL-55' })).data
+    expect(JSON.stringify(d.chain.slice(0, 4))).toBe(before)
+    expect(placementOf(d.chain, decisionRecords(d.chain)[0], NOW)!.state).toBe('provider_confirmed')
+    expect(await verifyChain(d.chain)).toEqual({ ok: true, checked: 5 })
+  })
+
+  it('the phase 1 consent event reads through the same description as new events', () => {
+    const e = v2().chain[2].snapshot
+    expect(isDecisionSnapshot(e)).toBe(false)
+    expect(describeEvent(e as never)).toBe('Consent changed: Consent given by Adult 2, by phone.')
+    expect(recordKind(v2().chain[2])).toBe('Consent update for #2')
   })
 })

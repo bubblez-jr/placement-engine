@@ -78,3 +78,13 @@ export function occupancyMessage(o: OccupiedPeriod, forCaseRef?: string): string
   if (o.kind === 'in_residence') return `Occupied ${formatShortDate(o.from)} to ${formatShortDate(o.to!)}`
   return `Booked ${formatShortDate(o.from)} to ${formatShortDate(o.to!)}`
 }
+
+/** Thrown when a property was taken between the search and the decision (or an extension). */
+export class OccupancyConflictError extends Error {
+  readonly conflicts: OccupiedPeriod[]
+  constructor(message: string, conflicts: OccupiedPeriod[]) {
+    super(message)
+    this.name = 'OccupancyConflictError'
+    this.conflicts = conflicts
+  }
+}

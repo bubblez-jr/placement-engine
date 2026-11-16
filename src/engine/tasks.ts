@@ -2,7 +2,7 @@ import { addDays, addHours, endOfDay, formatDate, formatUkTimeOn, nextWorkingDay
 import { complianceLabel, requiredCompliance } from './gates'
 import { LIVE, sharedStayDay, STATE_LABEL, type ApprovalView, type Placement } from './placement'
 import { ROLE_LABEL } from './permissions'
-import type { ActorRef, EventFact, IsoDateTime, PlacementPolicy, Property, Ruleset, StaffRole, StaffUser, StatutoryClock, TaskOwner } from './types'
+import type { ActorRef, EventFact, IsoDateTime, Issue, PlacementPolicy, Property, Ruleset, StaffRole, StaffUser, StatutoryClock, TaskOwner } from './types'
 
 // Warnings become tasks. Tasks are derived, not stored: one pure function
 // turns the placements, the inventory and the sealed task events into the task
@@ -445,4 +445,31 @@ export function dueText(t: Task, now: IsoDateTime): string {
 /** Plain-English state of a placement for a task's context line. */
 export function placementLine(p: Placement): string {
   return `${p.propertyLabel} · ${STATE_LABEL[p.state]}`
+}
+
+// ---------- What closing or moving a task needs ----------
+
+/** Completing a task needs evidence: what was done, and a reference to find it by. */
+export function validateCompletion(input: { evidence?: string; reference?: string }): Issue[] {
+  const issues: Issue[] = []
+  if ((input.evidence ?? '').trim().length < COMPLETE_MIN_CHARS)
+    issues.push({ path: 'task-evidence', severity: 'error', message: `Say what was done (at least ${COMPLETE_MIN_CHARS} characters).` })
+  if ((input.reference ?? '').trim().length < REFERENCE_MIN_CHARS)
+    issues.push({ path: 'task-reference', severity: 'error', message: 'Give a reference: a document, email or call reference.' })
+  return issues
+}
+
+export function validateReassign(task: Task, to: TaskOwner | null, note: string | undefined): Issue[] {
+  const issues: Issue[] = []
+  if (!to) issues.push({ path: 'task-to', severity: 'error', message: 'Choose who the task goes to.' })
+  else if (JSON.stringify(to) === JSON.stringify(task.owner)) issues.push({ path: 'task-to', severity: 'error', message: 'The task is already theirs.' })
+  if ((note ?? '').trim().length < COMPLETE_MIN_CHARS)
+    issues.push({ path: 'task-note', severity: 'error', message: `Add a note for the new owner (at least ${COMPLETE_MIN_CHARS} characters).` })
+  return issues
+}
+
+export function validateCancel(reason: string | undefined): Issue[] {
+  return (reason ?? '').trim().length < COMPLETE_MIN_CHARS
+    ? [{ path: 'task-cancelReason', severity: 'error', message: `Give the reason for cancelling (at least ${COMPLETE_MIN_CHARS} characters).` }]
+    : []
 }

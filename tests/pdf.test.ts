@@ -5,6 +5,7 @@ import { STAFF } from '../src/data/staff'
 import { cmdDecide, cmdUpdateConsent } from '../src/store/commands'
 import { migrate } from '../src/store/migrate'
 import schema1 from './fixtures/schema1-localstorage.json'
+import schema2 from './fixtures/schema2-localstorage.json'
 
 // The PDF renders from the sealed record only. Both record versions must render.
 const NOW = '2026-11-16T09:00:00.000Z'
@@ -32,5 +33,9 @@ describe('audit pack PDF', () => {
     expect(b.size).toBeGreaterThan(5000)
     const c = await renderAuditPdf(decisionRecords(d.chain)[2], d.chain)
     expect(c.size).toBeGreaterThan(5000)
+  }, 30_000)
+  it('renders a phase 1 record (no placement terms) with its later consent event', async () => {
+    const d = migrate(structuredClone(schema2), NOW)!
+    for (const r of decisionRecords(d.chain)) expect((await renderAuditPdf(r, d.chain)).size).toBeGreaterThan(5000)
   }, 30_000)
 })
