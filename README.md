@@ -12,7 +12,7 @@ The officer accepts the recommendation or chooses another option with a reason. 
 
 ![Placement options for a family of four: recommendation, map and cost against suitability](docs/images/results.png)
 
-> **Status: MVP on synthetic data.** Every household, property, supplier, place and member of staff is invented, and so is the demo history the app opens with. Sign-in is a labelled demo with no password: you choose who to be. There is no server: data lives in your browser, so two people on two devices do not see each other's bookings, and reminders are in the app only. Journey times are a labelled estimate and the housing benefit subsidy figures are illustrative. A solicitor should check the legal references before any pilot ([pilot readiness](docs/PILOT-READINESS.md)).
+> **Status: V2 on synthetic data.** Every household, property, supplier and member of staff is invented, and so are the example places and the demo history the app opens with. Sign-in is a labelled demo with no password: you choose who to be. There is no server for data: it lives in your browser, so two people on two devices do not see each other's bookings, and reminders are in the app only. Journey times are a labelled estimate until the site's TravelTime keys are set, and the housing benefit subsidy figures are illustrative until the head of service loads the official table; every screen and record says which. A solicitor should check the legal references before any pilot ([pilot readiness](docs/PILOT-READINESS.md)).
 
 ## Why
 
@@ -29,23 +29,25 @@ Since 5 February 2026, the automated-decision rules also require meaningful huma
 
 ## What it does
 
-|                                    |                                                                                                                                                                                                                                                           |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Checks every property**          | Availability, size, access, safety certificates, approved supplier, safeguarding zones, affordability, and the rule against shared rooms for families. Each check cites its legal basis.                                                                  |
-| **Ranks what passes**              | A suitability score from factors the council weights: school, work, treatment and care journeys; location; facilities; condition; whether the property covers the whole stay. Each factor maps to the 2012 Suitability Order.                             |
-| **Shows the real cost**            | The nightly charge minus the housing benefit subsidy the council can reclaim, plus any cost to other budgets (education transport) and to the family. Cost sits beside suitability, never inside it.                                                      |
-| **Explains itself**                | Plain-English reasons, a map, cost against suitability, side-by-side comparison, and a check that the pick still holds if the policy weights move 20% either way. No AI computes or invents anything.                                                     |
-| **Checks what is entered**         | Missing or impossible details stop the search with a summary that links to each field. A wheelchair user or a disability opens explicit access questions per person; every "yes" is checked, by name.                                                     |
-| **Records the officer's decision** | Accept, or override with a reason code and the officer's own words. The signed-in officer is recorded, never a typed name. Consent to notify school and health services is recorded, never assumed. What they reviewed first is logged.                   |
-| **Seals the evidence**             | Canonical JSON snapshot in a SHA-256 hash chain; editing any past record breaks the chain. Later facts (each booking step, an approval, a consent answer, a task done) are new records. Audit pack as a page and a PDF, telling the whole story in order. |
-| **Tracks the booking**             | Hold, provider confirmation, offer, acceptance or refusal, move-in and move-out, each recorded with who and when. A hold not confirmed in 24 hours lapses. A refusal is recorded in the household's words and goes to a manager.                          |
-| **Stops double bookings**          | A held, booked or occupied property is ruled out of every search for overlapping dates, with the dates and nothing about the other household. Recording a decision checks again at that moment.                                                           |
-| **Routes exceptions to a manager** | Overrides, out-of-area and shared-accommodation placements wait for a manager who did not make the decision. A family at the door at 2am can go ahead "out of hours, approval to follow", on the record.                                                  |
-| **Owns the six-week limit**        | A family in B&B or shared rooms needs an emergency reason and a move-on plan with a named owner; weekly reviews and escalation to the team manager and head of service as the limit nears; a day counter on the record.                                   |
-| **Turns warnings into tasks**      | Notices, consent follow-ups, certificates, holds, approvals, refusals and stays ending become tasks with an owner, a due time and escalation. Completing one needs evidence. Reminders are in the app only until there is a server.                       |
-| **Knows who may do what**          | Officers search, decide and act on placements; managers approve exceptions and reassign tasks; only the head of service (or admin) publishes policy; the auditor reads everything and changes nothing. Enforced in the store, not only by hiding buttons. |
-| **Starts the statutory clocks**    | s208 notice to the receiving council, the 6-week limit for families in shared accommodation, s213AA school/GP notification, s202 review window, with draft notices.                                                                                       |
-| **Keeps policy versioned**         | The council's weights and rules are published as signed, hashed versions with an equality note; every decision records the version it used.                                                                                                               |
+|                                    |                                                                                                                                                                                                                                                                                                                                                   |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Checks every property**          | Availability, size, access, safety certificates, approved supplier, safeguarding zones, affordability, and the rule against shared rooms for families. Each check cites its legal basis.                                                                                                                                                          |
+| **Ranks what passes**              | A suitability score from factors the council weights: school, work, treatment and care journeys; location; facilities; condition; whether the property covers the whole stay. Each factor maps to the 2012 Suitability Order.                                                                                                                     |
+| **Shows the real cost**            | The nightly charge minus the housing benefit subsidy the council can reclaim, plus any cost to other budgets (education transport) and to the family. Cost sits beside suitability, never inside it. Every subsidy figure says whether it is illustrative or from the official table, which the head of service loads from a checked, cited file. |
+| **Says where journeys come from**  | Timetable-based public transport times from TravelTime once the keys are set, through the site's own server so the key never reaches the browser; otherwise a labelled estimate. Each journey says which, and a failure falls back to the estimate and says why. Real places can be added by postcode.                                            |
+| **Works with council systems**     | Imports a household from a case-system file into the form for the officer to check (never searching by itself), reporting anything it does not use. Exports the PDF, a case note, the sealed record and a placements spreadsheet, each export itself recorded. No pretend live connectors.                                                        |
+| **Explains itself**                | Plain-English reasons, a map, cost against suitability, side-by-side comparison, and a check that the pick still holds if the policy weights move 20% either way. No AI computes or invents anything.                                                                                                                                             |
+| **Checks what is entered**         | Missing or impossible details stop the search with a summary that links to each field. A wheelchair user or a disability opens explicit access questions per person; every "yes" is checked, by name.                                                                                                                                             |
+| **Records the officer's decision** | Accept, or override with a reason code and the officer's own words. The signed-in officer is recorded, never a typed name. Consent to notify school and health services is recorded, never assumed. What they reviewed first is logged.                                                                                                           |
+| **Seals the evidence**             | Canonical JSON snapshot in a SHA-256 hash chain; editing any past record breaks the chain. Later facts (each booking step, an approval, a consent answer, a task done) are new records. Audit pack as a page and a PDF, telling the whole story in order.                                                                                         |
+| **Tracks the booking**             | Hold, provider confirmation, offer, acceptance or refusal, move-in and move-out, each recorded with who and when. A hold not confirmed in 24 hours lapses. A refusal is recorded in the household's words and goes to a manager.                                                                                                                  |
+| **Stops double bookings**          | A held, booked or occupied property is ruled out of every search for overlapping dates, with the dates and nothing about the other household. Recording a decision checks again at that moment.                                                                                                                                                   |
+| **Routes exceptions to a manager** | Overrides, out-of-area and shared-accommodation placements wait for a manager who did not make the decision. A family at the door at 2am can go ahead "out of hours, approval to follow", on the record.                                                                                                                                          |
+| **Owns the six-week limit**        | A family in B&B or shared rooms needs an emergency reason and a move-on plan with a named owner; weekly reviews and escalation to the team manager and head of service as the limit nears; a day counter on the record.                                                                                                                           |
+| **Turns warnings into tasks**      | Notices, consent follow-ups, certificates, holds, approvals, refusals and stays ending become tasks with an owner, a due time and escalation. Completing one needs evidence. Reminders are in the app only until there is a server.                                                                                                               |
+| **Knows who may do what**          | Officers search, decide and act on placements; managers approve exceptions and reassign tasks; only the head of service (or admin) publishes policy; the auditor reads everything and changes nothing. Enforced in the store, not only by hiding buttons.                                                                                         |
+| **Starts the statutory clocks**    | s208 notice to the receiving council, the 6-week limit for families in shared accommodation, s213AA school/GP notification, s202 review window, with draft notices.                                                                                                                                                                               |
+| **Keeps policy versioned**         | The council's weights and rules are published as signed, hashed versions with an equality note; every decision records the version it used.                                                                                                                                                                                                       |
 
 <table>
   <tr>
@@ -72,6 +74,18 @@ Since 5 February 2026, the automated-decision rules also require meaningful huma
     <td><img src="docs/images/sign-in.png" alt="Demo sign-in with synthetic staff and a plain warning that it is not security" /></td>
     <td><img src="docs/images/held-ruled-out.png" alt="A second search: the property held for another case is ruled out, with the time the hold ends" /></td>
   </tr>
+  <tr>
+    <td><img src="docs/images/journeys-fallback.png" alt="Results when TravelTime fails (simulated in the walkthrough): the estimate is used and a warning says why" /></td>
+    <td><img src="docs/images/postcode-place.png" alt="A place added by postcode, labelled as located from its postcode, beside the synthetic example places" /></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/import.png" alt="A household imported from a case-system file: what was read, what was not used, and the questions still to answer; nothing searched" /></td>
+    <td><img src="docs/images/subsidy-import.png" alt="The head of service loading a subsidy table (walkthrough test values): checked, previewed and compared with the table in use before publishing" /></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/exports.png" alt="Audit log with exports recorded, and the placements export" /></td>
+    <td></td>
+  </tr>
 </table>
 
 ## Try it
@@ -95,18 +109,20 @@ The demo opens with some synthetic history already sealed, so you can see the bo
 
 Then record a decision (with the parent's consent answer), take it through provider confirmation, the offer, move-in and move-out on its record, open the audit pack, and try **Audit log → Edit record #1 behind the system's back** to see tamper detection. Try the "Pregnant, alone, out of hours" example for a B&B placement with a move-on plan and "placed out of hours, approval to follow". To see the checks, open **New placement** and press **Find placements** on the blank form, or tick **Wheelchair user** on someone.
 
+To see phase 3: on **New placement**, press **Import from the case system** and try the wheelchair-user example file (it fills the form, lists what it did not use, and will not search until the access questions are answered), or **Add a place by postcode**. Open any audit pack and copy the case note, then see the export recorded in its story. Sign in as the head of service and open **Placement policy → Housing benefit subsidy table** to see how the official table is loaded.
+
 Data saved by the earlier version in this browser is carried over: its sealed records still verify and show as recorded under the earlier version.
 
 ## Development
 
-| Command               | Does                                                                                                                                                                 |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run dev`         | Local dev server                                                                                                                                                     |
-| `npm test`            | Engine, scenario, validation, access, permission, consent, placement, occupancy, task, lifecycle, demo history, migration, store, audit, PDF and CSV tests (Vitest)  |
-| `npm run check`       | Typecheck + tests + formatting (what CI runs)                                                                                                                        |
-| `npm run build`       | Production build (`dist/`)                                                                                                                                           |
-| `npm run build:demo`  | One self-contained HTML file (`dist-demo/index.html`) for a shareable click-through                                                                                  |
-| `npm run walkthrough` | Signs in and clicks through every flow in headless Chromium (light, dark, phone), runs named checks and saves screenshots to `screenshots/` (run `build:demo` first) |
+| Command               | Does                                                                                                                                                                                                                                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`         | Local dev server                                                                                                                                                                                                                                                                            |
+| `npm test`            | Engine, scenario, validation, access, permission, consent, placement, occupancy, task, lifecycle, demo history, migration, store, audit, PDF, CSV, travel (functions and providers, mocked fetch), subsidy, import and export tests (Vitest)                                                |
+| `npm run check`       | Typecheck + tests + formatting (what CI runs)                                                                                                                                                                                                                                               |
+| `npm run build`       | Production build (`dist/`)                                                                                                                                                                                                                                                                  |
+| `npm run build:demo`  | One self-contained HTML file (`dist-demo/index.html`) for a shareable click-through                                                                                                                                                                                                         |
+| `npm run walkthrough` | Signs in and clicks through every flow in headless Chromium (light, dark, phone), runs named checks and saves screenshots to `screenshots/`. Run `build` and `build:demo` first: it serves the hosted build locally, and answers the journey-time functions and postcodes.io with stand-ins |
 
 Stack: React 19, TypeScript, Vite, Tailwind CSS 4, Vitest, `@react-pdf/renderer`. Node 22.
 
@@ -115,6 +131,8 @@ Stack: React 19, TypeScript, Vite, Tailwind CSS 4, Vitest, `@react-pdf/renderer`
 - [How it decides](docs/HOW-IT-DECIDES.md): gates, factors, weights, cost model, recommendation, seal.
 - [Architecture](docs/ARCHITECTURE.md): code layout, data flow, the path from MVP to pilot.
 - [Pilot readiness](docs/PILOT-READINESS.md): legal, data protection, equality and security checklist before any real household.
+- [Integration](docs/INTEGRATION.md): the household import and export formats, the subsidy table file, the journey-time functions, and the route to live connectors.
+- [V2 spec](docs/specs/v2-officer-feedback.md) and the [reply to the officer's review](docs/specs/v2-reply-to-spenser.md).
 
 The market research, competitor review and commercial plan behind the product are in the ops vault (`bookflo-ops/plans/placement-engine/`).
 
@@ -124,14 +142,24 @@ Live demo: **placement.book-flo.com** (Vercel project `placement-engine`, deploy
 
 Setup, once:
 
-1. Vercel → **Add New → Project** → import `bubblez-jr/placement-engine`. `vercel.json` sets the build (Vite, `npm run build`, `dist`), so just press **Deploy**.
+1. Vercel → **Add New → Project** → import `bubblez-jr/placement-engine`. `vercel.json` sets the build (Vite, `npm run build`, `dist`), the two functions in `api/` (Node.js runtime) and their region, London (`lhr1`), so just press **Deploy**.
 2. Project → **Settings → Domains** → add `placement.book-flo.com`.
 
-The demo is kept out of search engines (`noindex`). There is no server yet, so all data lives in the viewer's browser and each person sees their own demo; **Audit log → Reset demo data** starts fresh.
+**Real journey times (optional).** Without these the site uses the labelled estimate and says so.
+
+1. Create a TravelTime account and an application; note its Application ID and API key.
+2. Vercel → Project → **Settings → Environment Variables** → add `TRAVELTIME_APP_ID` and `TRAVELTIME_API_KEY` for Production (and Preview if wanted). They are read only by the functions; the key never reaches the browser.
+3. Redeploy (Deployments → the latest → **Redeploy**), so the functions pick up the variables.
+4. Open `https://placement.book-flo.com/api/travel-status?check=1`. Expect `"configured": true`, `"region": "lhr1"` and `"check": { "ok": true, "minutes": … }`. A `"check"` with `"ok": false` gives the reason (`bad_key`, `rejected`, `bad_response`, …): the request format in `api/_lib/traveltime.ts` was written from TravelTime's documentation without a key and may need adjusting ([architecture](docs/ARCHITECTURE.md#journey-times)).
+5. Run any example search: the top of the results should say "Public transport times from TravelTime" and the day planned for. Function logs (Vercel → Logs) show only outcome codes and counts.
+
+Storing TravelTime's times in sealed records needs their written permission before real use.
+
+The demo is kept out of search engines (`noindex`). There is no server for data yet, so all data lives in the viewer's browser and each person sees their own demo; **Audit log → Reset demo data** starts fresh.
 
 ## Not in the MVP, on purpose
 
-Supplier portal or marketplace, reverse placement requests, cross-council supply, invoicing, case management, and live integrations with Adam, Jigsaw, Locata or NEC. Properties come in by CSV.
+Supplier portal or marketplace, reverse placement requests, cross-council supply, invoicing, case management, and live integrations with Adam, Jigsaw, Locata or NEC (they need a council sponsoring API access: [integration](docs/INTEGRATION.md)). Properties come in by CSV; households by file.
 
 ---
 

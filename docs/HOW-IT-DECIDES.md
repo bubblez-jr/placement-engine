@@ -4,16 +4,16 @@ Everything here is deterministic, versioned and testable. The same household, in
 
 ## 0. Checks on the household details
 
-Before any property is looked at, `validateHousehold()` (`src/engine/validate.ts`) checks what was entered. The search refuses to run while there is an error, whether the household came from the form or any other route, so an import cannot skip it. Warnings never block; they are shown and frozen into the search result.
+Before any property is looked at, `validateHousehold()` (`src/engine/validate.ts`) checks what was entered. The search refuses to run while there is an error, whether the household came from the form, an imported file ([INTEGRATION.md](INTEGRATION.md)) or any other route, so an import cannot skip it. Warnings never block; they are shown and frozen into the search result.
 
 **Errors** (the search will not run):
 
-- case reference blank, or over 40 characters after trimming;
+- case reference blank, or over 40 characters after trimming; no last settled area;
 - nobody in the household, or nobody aged 16 or over;
 - an age that is not a whole number from 0 to 120; an "adult" under 16; a "child" of 18 or over;
 - a partner link that is not mutual, or points to someone not in the household;
 - date needed missing, not a real date, or in the past; expected stay not a whole number from 1 to 730 nights;
-- a place with no person or an unknown person, an invalid arrive-by time, or days a week outside 1 to 7;
+- a place with no name, no location, no person or an unknown person, an invalid arrive-by time, or days a week outside 1 to 7;
 - what the household can pay is negative or not a number; an exclusion zone radius outside 0.1 to 50 km;
 - an access question left unanswered (0.1).
 
@@ -49,7 +49,18 @@ Every property is checked. A failed **block** removes it, with a reason the offi
 
 ## 2. Journeys
 
-For each eligible property: public-transport minutes to every place the household recorded (school, work, treatment, care, support) and to the last settled area. The MVP uses `estimate-v1`, which works from straight-line distance and is labelled everywhere it appears (`src/travel/estimate.ts`). The engine only sees the `TravelProvider` interface, so TravelTime or a self-hosted r5 router can replace it without touching scoring.
+For each property: public-transport minutes to every place the household recorded (school, work, treatment, care, support), arriving by that place's arrive-by time, and to the last settled area (arriving by 09:00, for the location tier).
+
+**The day.** Journeys are planned for the first Tuesday, Wednesday or Thursday on or after the date needed, outside the summer holiday (22 July to 31 August), Christmas (21 December to 3 January) and the fortnight around Easter. A school run is a term-time weekday trip; Tuesday to Thursday avoids bank holiday Mondays and Good Friday (the demo has no bank holiday calendar) and Monday and Friday timetables that can differ. Half-terms differ by council and are not modelled; a pilot uses the council's term dates. The day comes from the date needed, never from the clock, so the same search always plans the same journeys, and it is recorded with them.
+
+**Where the times come from.** The engine only sees the `TravelProvider` interface:
+
+- **TravelTime**, timetable-based public transport, through this site's own server functions so the key never reaches the browser. Used by the hosted site once the keys are set.
+- **The estimate** (`estimate-v1`, `src/travel/estimate.ts`), from straight-line distance. Used by the shared demo file, the seeded history, and whenever TravelTime is not switched on or fails.
+
+If TravelTime fails for any reason (not switched on, a refused key, a limit reached, no answer in time, an answer in an unexpected form) every journey falls back to the estimate. If it answers for only some journeys, the rest are estimates. Nothing is made up: a place TravelTime finds no route to within 4 hours is recorded as "no route", which scores 0 for that journey.
+
+**What is recorded.** Each journey records whether its time came from TravelTime or the estimate; the search records what was asked for, the outcome (all measured, all estimated, or mixed), the reason for any fallback and how many journeys it covered, and the day planned for. The results say it at the top in plain words, as a warning when something failed and as information when the estimate was used on purpose or TravelTime is not switched on; the property page, comparison, audit pack, PDF, case note and placements CSV say it too. Searches recorded before this existed read as the estimate.
 
 ## 3. Suitability score (0–100)
 
@@ -75,8 +86,8 @@ Factors that don't apply (for example, no school-age children) are left out and 
 Cost is shown **beside** suitability, never folded into the score.
 
 - **TA budget, net per night** = nightly charge − housing benefit subsidy.
-- **Subsidy** = the lowest of: the charge; 90% × the January 2011 LHA weekly rate for the property's area (BRMA) and size (one-bed rate if facilities are shared); £500/week in inner London BRMAs, £375 elsewhere. All are rule-set parameters. **The demo figures are illustrative**: load the DWP table before real use.
-- **Education** = travel to an existing school after the move, where the council funds it: journey over 45 minutes, outside London, or a SEND taxi (£/km × 2). Under-16s ride London buses free, so most London moves cost education nothing.
+- **Subsidy** = the lowest of: the charge; 90% × the January 2011 LHA weekly rate for the property's area (BRMA) and size (one-bed rate if facilities are shared); £500/week in inner London BRMAs, £375 elsewhere. All are rule-set parameters. The table has a status. **The shipped figures are illustrative**, and so is every policy version published before the status existed. The head of service loads the official DWP table from a CSV file (checked, previewed, compared with the table in use, cited and dated, then published as a new signed version: [INTEGRATION.md](INTEGRATION.md)). Every cost line, the cost explanation, and every screen and record that shows a subsidy figure says "illustrative" or "official", from the figures the search actually used. The formula itself (for example the one-bedroom rate for shared facilities) is to be confirmed with the council's benefits team before a pilot.
+- **Education** = travel to an existing school after the move, where the council funds it: journey over 45 minutes, outside London, or a SEND taxi (£/km × 2). Under-16s ride London buses free, so most London moves cost education nothing. The bus fare and the taxi rate are the council's own assumptions, set in the policy, and are labelled so.
 - **Household** = travel the family pays, plus charges housing benefit doesn't cover.
 - **Public cost of the stay** = (TA net + education) × the expected stay.
 - **Risks** are listed, not costed: the Ombudsman remedy range when a family stays in shared accommodation past 6 weeks, and out-of-area placements.
@@ -118,7 +129,7 @@ At decision time the engine freezes a snapshot (`placement-decision/2`; records 
 
 Records sealed from phase 2 also hold the decision's **terms**: the exceptions it raised, the hold's end, the planned end, and for a family in shared accommodation the emergency reason and move-on plan. They show what applied at the time, whatever later changes.
 
-Later facts about a decision are their own records in the same chain (`placement-event/1`), each pointing to the decision's sequence number and hash: each step of the placement, a changed planned end, an approval or rejection, "placed out of hours, approval to follow", consent updates, and tasks completed (with their evidence), reassigned or cancelled. A task about a property rather than a case (a certificate) points to the property instead.
+Later facts about a decision are their own records in the same chain (`placement-event/1`), each pointing to the decision's sequence number and hash: each step of the placement, a changed planned end, an approval or rejection, "placed out of hours, approval to follow", consent updates, tasks completed (with their evidence), reassigned or cancelled, and exports (who exported what, how, and a fingerprint of exactly what was exported). A task about a property rather than a case (a certificate) points to the property instead; an export of every placement points to nothing in particular.
 
 Statutory clocks set from the start date:
 
@@ -143,11 +154,13 @@ Statutory clocks set from the start date:
 | Publish placement policy                 |                           |              |       Yes       |                       |         |  Yes  |
 | Import or edit properties                |                           |              |                 |          Yes          |         |  Yes  |
 | Confirm availability                     |            Yes            |     Yes      |       Yes       |          Yes          |         |  Yes  |
+| Import a household from a file           |            Yes            |     Yes      |       Yes       |                       |         |  Yes  |
+| Load the official subsidy table          |                           |              |       Yes       |                       |         |  Yes  |
 | View the audit log, export records       |            Yes            |     Yes      |       Yes       |          Yes          |   Yes   |  Yes  |
 | Run the tamper demonstration             |            Yes            |     Yes      |       Yes       |          Yes          |         |  Yes  |
 | Reset the demo data                      |                           |              |                 |                       |         |  Yes  |
 
-Nobody approves their own decision. A manager can complete a task assigned to someone else; an officer can complete only their own and their role queue's. The auditor reads everything and changes nothing.
+Nobody approves their own decision. A manager can complete a task assigned to someone else; an officer can complete only their own and their role queue's. The auditor reads everything and changes nothing; an export the auditor makes is still recorded, as an access log entry. Loading the subsidy table is part of publishing policy.
 
 ## 10. After the decision: placements, approvals and tasks
 

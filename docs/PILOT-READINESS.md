@@ -20,7 +20,8 @@ The MVP is safe to demo because nothing in it is real. This list is what has to 
 - [ ] Article 28 data processing agreement; Book-flo acts as processor.
 - [ ] Data minimisation: pseudonymous case references only; names stay in the case system.
 - [ ] Retention period for decision snapshots, agreed with the council.
-- [ ] Sub-processors listed: hosting, travel-time API (coordinates only).
+- [ ] Sub-processors listed: hosting; TravelTime (receives coordinates and arrival times only, from the server); postcodes.io (receives the postcode an officer looks up, from the browser). Confirm the council is content for officers to look up the postcodes of schools, workplaces and services there; the form tells them not to enter the household's own address.
+- [ ] Exports: decide where exported case notes, records and CSVs may be saved. Each export is recorded with a fingerprint, but what happens to the file afterwards is outside the product.
 
 ## Equality
 
@@ -32,7 +33,8 @@ The MVP is safe to demo because nothing in it is real. This list is what has to 
 ## Security (minimum for real data)
 
 - [ ] Cyber Essentials certificate (Book-flo's is in progress).
-- [ ] UK hosting: Supabase London; Vercel functions pinned to London.
+- [ ] UK hosting: Supabase London; Vercel functions pinned to London (built: `regions: ["lhr1"]` in `vercel.json`; confirm in the Vercel dashboard after the first deployment with functions).
+- [ ] The journey-time function is open to anyone who can reach the site (it refuses other sites' pages, nothing more), so the TravelTime allowance could be used up by someone else. Put it behind the pilot's real sign-in and add a rate limit.
 - [ ] Real sign-in: council single sign-on with MFA as an `AuthProvider` implementation. The demo sign-in has no password and proves nothing about identity; it only shows the flow.
 - [ ] Role-based access enforced on the server as well as in the browser store (built in the browser: the role × action matrix in `src/engine/permissions.ts`, checked before every change), with tested row-level isolation.
 - [ ] Staff directory from the council (the demo's eight staff are synthetic).
@@ -41,9 +43,13 @@ The MVP is safe to demo because nothing in it is real. This list is what has to 
 
 ## Product
 
-- [ ] Real travel times with written rights to store results in decision records.
-- [ ] Official DWP January 2011 LHA table and current subsidy caps loaded and versioned.
-- [ ] Real schools (GIAS) and GPs (ODS) as destination lists; postcode search.
+- [ ] Real travel times: a TravelTime account, the two keys in Vercel, and a check with a live key of everything marked unverified in `api/_lib/traveltime.ts` (request and response shapes, limits, error codes, how the planning date is treated). Until then the site uses the labelled estimate (built: the provider, the fallback and the record of which was used).
+- [ ] Written permission from TravelTime to store their journey times in sealed decision records (every decision snapshot keeps them).
+- [ ] The council's term dates for the journey planning day (today: summer, Christmas and Easter only; half-terms not modelled).
+- [ ] Official DWP January 2011 LHA table loaded by the head of service from a cited file (built: the import with its checks, preview and comparison; needed: the file). Current subsidy caps confirmed in the policy.
+- [ ] The subsidy formula confirmed with the council's benefits or subsidy team: 90% of the January 2011 rate, the caps, the one-bedroom rate for shared facilities, and any rule specific to bed and breakfast.
+- [ ] Real schools (GIAS) and GPs (ODS) as destination lists (built: a place by postcode, through postcodes.io).
+- [ ] Council systems: a council sponsoring API access with its case management supplier (Jigsaw, Locata, NEC) and Adam, for server-side connectors using the import and export formats in [INTEGRATION.md](INTEGRATION.md) (built: file import with validation and a report of what was not used; exports recorded with a fingerprint). Confirm the H-CLIC field mapping against the specification the council submits.
 - [ ] Inventory import from the council's booking platform export; "confirmed at" kept honest.
 - [ ] Server-side storage and the insert-only snapshot table (see ARCHITECTURE.md).
 - [ ] Accessibility statement (WCAG 2.2 AA) and a screen-reader pass.

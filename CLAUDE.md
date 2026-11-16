@@ -6,7 +6,7 @@ Decision support for council temporary accommodation placements. Read `README.md
 
 - `npm run check` must pass: typecheck, tests, Prettier. CI runs the same, plus both builds.
 - Engine changes need a test. The five scenarios in `tests/scenarios.test.ts` are the regression suite; if a ranking changes, explain why in the commit message.
-- UI changes: `npm run build:demo && npm run walkthrough`, then look at the screenshots, including phone width and dark mode. The script reports horizontal overflow; it must be 0.
+- UI changes: `npm run build && npm run build:demo && npm run walkthrough`, then look at the screenshots, including phone width and dark mode. The script reports horizontal overflow; it must be 0, with no console errors (failed requests to the stand-in services are counted separately).
 
 ## Rules of the product
 
@@ -15,6 +15,8 @@ Decision support for council temporary accommodation placements. Read `README.md
 - **Cost never makes an unsuitable option suitable.** Cost stays on its own axis and only breaks near-ties (the policy's tie-break band).
 - **Every gate and factor cites its legal basis.** Keep `legalBasis` / `legalFactor` text accurate and plain; legal wording is still to be confirmed by a solicitor (`docs/PILOT-READINESS.md`).
 - **Synthetic data is labelled as synthetic** everywhere it appears. No real household, address or person goes into this repo.
+- **Every journey time and subsidy figure says where it came from**, on screen and in the sealed record: TravelTime or the estimate (and why it fell back), the official table (with its citation) or illustrative figures. Nothing is shown as real or official unless it was loaded from a cited source.
+- **Keys stay on the server.** Vendor keys live only in the functions in `api/` (environment variables); the browser sends coordinates and times, never names or case details, and the functions log outcome codes and counts only.
 - **Policy is versioned and hashed.** Decisions reference the rule-set hash; never mutate a published rule-set.
 - **The seal is append-only.** Don't change `canonicalize()` or the chain format without a migration plan; old records must still verify.
 
