@@ -1,13 +1,19 @@
 import { addDays, daysBetween } from './dates'
 import { isFamilyHousehold } from './bedrooms'
-import type { Decision, Household, Property, Ruleset, StatutoryClock } from './types'
+import type { DecisionV2, Household, Property, Ruleset, StatutoryClock } from './types'
 import { sharedFacilities } from './gates'
+
+/** Days after the start by which an officer should ask for consent that was not asked at placement. */
+export const CONSENT_FOLLOW_UP_DAYS = 7
+
+export const S213AA_BASIS = 'Housing Act 1996 s213AA (Children’s Wellbeing and Schools Act 2026), in force 1 Sep 2026: notify within 14 days, with consent'
 
 /**
  * Statutory clocks that start when a placement begins. The legal references
  * are what the research found; a solicitor should confirm them before a pilot.
+ * Schema-1 records keep the clocks they were sealed with; this builds new ones.
  */
-export function statutoryClocks(h: Household, p: Property, rs: Ruleset, d: Decision): StatutoryClock[] {
+export function statutoryClocks(h: Household, p: Property, rs: Ruleset, d: DecisionV2): StatutoryClock[] {
   const start = d.startDate
   const clocks: StatutoryClock[] = []
   if (p.district !== rs.homeDistrict) {
@@ -29,15 +35,29 @@ export function statutoryClocks(h: Household, p: Property, rs: Ruleset, d: Decis
     })
   }
   if (h.members.some(m => m.role === 'child')) {
-    clocks.push({
-      key: 's213aa',
-      label: d.consentToNotifyServices
-        ? "Notify the children's school(s), GP and health visitor"
-        : 'Ask again for consent to notify school, GP and health visitor',
-      due: addDays(start, 14),
-      basis: 'Housing Act 1996 s213AA (Children’s Wellbeing and Schools Act 2026), in force 1 Sep 2026: notify within 14 days, with consent',
-      status: 'open',
-    })
+    const consent = d.consent?.status ?? 'not_asked'
+    if (consent === 'not_asked') {
+      // Until tasks arrive (phase 2), the follow-up is a clock inside the s213AA window.
+      clocks.push({
+        key: 'consent-follow-up',
+        label: 'Ask a parent for consent to notify the school, GP and health visitor',
+        due: addDays(start, CONSENT_FOLLOW_UP_DAYS),
+        basis: `Council practice: ask within ${CONSENT_FOLLOW_UP_DAYS} days so the s213AA notice can still go within 14 days`,
+        status: 'open',
+      })
+    }
+    if (consent !== 'refused') {
+      clocks.push({
+        key: 's213aa',
+        label:
+          consent === 'given'
+            ? "Notify the children's school(s), GP and health visitor"
+            : "Notify the children's school(s), GP and health visitor, if consent is given",
+        due: addDays(start, 14),
+        basis: S213AA_BASIS,
+        status: 'open',
+      })
+    }
   }
   clocks.push({
     key: 's202',
