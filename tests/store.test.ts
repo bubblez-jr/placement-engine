@@ -12,13 +12,13 @@ import {
   cmdDecide,
   cmdPublishRuleset,
   cmdReplaceProperties,
-  cmdReset,
   cmdSearch,
   cmdTamper,
   cmdUpdateConsent,
   type CommandCtx,
 } from '../src/store/commands'
 import { seed, type AppData } from '../src/store/data'
+import { cmdReset } from '../src/store/demo'
 import { estimateProvider } from '../src/travel/estimate'
 import { NOW, TODAY } from './fixtures'
 

@@ -47,7 +47,7 @@ import type {
 import { ValidationError, type OpenCase } from '../engine/validate'
 import { STAFF } from '../data/staff'
 import type { TravelProvider } from '../travel/provider'
-import { activeRulesetOf, seed, type AppData, type HashedRuleset, type ReviewLog } from './data'
+import { activeRulesetOf, type AppData, type HashedRuleset, type ReviewLog } from './data'
 
 // Every change to app data goes through one of these. Each takes the actor
 // from the signed-in session (never from a form field), checks the
@@ -470,9 +470,4 @@ export function cmdUndoTamper(d: AppData, ctx: CommandCtx): AppData {
   if (!d.tamperBackup) return d
   const b = d.tamperBackup
   return { ...d, chain: d.chain.map(r => (r.seq === b.seq ? { ...r, snapshot: b.snapshot } : r)), tamperBackup: undefined }
-}
-
-export async function cmdReset(ctx: CommandCtx): Promise<AppData> {
-  assertCan(ctx.user, 'reset_demo')
-  return seed(ctx.now, ctx.today)
 }

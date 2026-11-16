@@ -33,8 +33,9 @@ export interface ReviewLog {
   comparisonOpened: boolean
 }
 
-export async function seed(now: string, today: string): Promise<AppData> {
-  const rs = await hashRuleset(defaultRuleset(now))
+/** Empty demo data: the policy, the inventory, no searches or records. `policySignedAt` backdates the policy for seeded history. */
+export async function seed(now: string, today: string, policySignedAt = now): Promise<AppData> {
+  const rs = await hashRuleset(defaultRuleset(policySignedAt))
   return {
     schema: 2,
     seededAt: now,

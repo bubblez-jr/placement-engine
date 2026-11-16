@@ -119,6 +119,9 @@ const SPECS: Spec[] = [
     grade: 'C',
     nightly: 85,
     householdWeekly: 0,
+    // On the books for weeks: the seeded demo history places a family here (src/store/demo.ts).
+    availableFrom: -60,
+    confirmedDaysAgo: 32,
   },
   {
     id: 'P05',
@@ -187,6 +190,9 @@ const SPECS: Spec[] = [
     maxOccupants: 6,
     grade: 'B',
     nightly: 112,
+    // On the books for weeks: the seeded demo history places a family here (src/store/demo.ts).
+    availableFrom: -45,
+    confirmedDaysAgo: 21,
   },
   {
     id: 'P09',
