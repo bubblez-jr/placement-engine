@@ -7,7 +7,7 @@ import { AREAS, PLACES, PLACE_KIND_LABEL } from '../../data/places'
 import { ACCESS_NEED_LABEL, ACCESS_QUESTIONS, HOUSEHOLD_SUBJECT, requiredAccessSubjects, subjectLabel } from '../../engine/access'
 import { bedroomNeed } from '../../engine/bedrooms'
 import { formatDateTime, toIsoDate } from '../../engine/dates'
-import { actorRef, check } from '../../engine/permissions'
+import { check } from '../../engine/permissions'
 import { CASE_REF_MAX, MAX_STAY_NIGHTS, validateHousehold, ValidationError } from '../../engine/validate'
 import type { AccessAssessment, AccessQuestion, Household, Issue, Person, PriorityFlag, YesNo } from '../../engine/types'
 import { ErrorSummary, Field, FieldError, fieldA11y, NotAllowed, NumberInput, PageHeader, Section, WarningList } from '../bits'
@@ -95,15 +95,10 @@ export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string
   const setMember = (id: string, patch: Partial<Person>) => set({ members: h.members.map(m => (m.id === id ? { ...m, ...patch } : m)) })
 
   function answer(subject: string, q: AccessQuestion, v: YesNo) {
-    const now = new Date().toISOString()
     const list = h.accessAssessments ?? []
     const existing = list.find(a => a.subject === subject)
-    const next: AccessAssessment = {
-      ...(existing ?? { subject, answers: {} }),
-      answers: { ...existing?.answers, [q]: v },
-      answeredBy: actorRef(user),
-      answeredAt: now,
-    }
+    // Who answered is stamped by the store from the session when the search runs.
+    const next: AccessAssessment = { ...(existing ?? { subject, answers: {} }), answers: { ...existing?.answers, [q]: v } }
     set({ accessAssessments: existing ? list.map(a => (a.subject === subject ? next : a)) : [...list, next] })
   }
 
@@ -440,8 +435,9 @@ export function NewPlacement({ scenarioId, fromSearchId }: { scenarioId?: string
                   </div>
                   <p className="mt-2 text-xs text-faint">
                     {a?.answeredBy && a.answeredAt
-                      ? `Last answered by ${a.answeredBy.name}, ${formatDateTime(a.answeredAt)}`
-                      : 'Example answers are confirmed by whoever runs the search.'}
+                      ? `In the earlier search these were confirmed by ${a.answeredBy.name}, ${formatDateTime(a.answeredAt)}. `
+                      : ''}
+                    The record names you as confirming these answers when you run the search.
                   </p>
                 </div>
               )

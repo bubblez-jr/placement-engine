@@ -46,11 +46,12 @@ export async function cmdSearch(
 ): Promise<{ data: AppData; result: SearchResult }> {
   assertCan(ctx.user, 'run_search')
   const actor = actorRef(ctx.user!)
-  // Answers that arrived without an officer stamp (an example household, an
-  // import) are confirmed by the officer who runs the search.
+  // The access answers in a search are the searching officer's: every answer is
+  // stamped from the session here, whatever stamp it arrived with (a form, an
+  // example household, an import), so no one can be named by form data.
   const stamped: Household = {
     ...household,
-    accessAssessments: (household.accessAssessments ?? []).map(a => (a.answeredBy ? a : { ...a, answeredBy: actor, answeredAt: ctx.now })),
+    accessAssessments: (household.accessAssessments ?? []).map(a => ({ ...a, answeredBy: actor, answeredAt: ctx.now })),
   }
   const rs = activeRulesetOf(d)
   const result = await runSearch({

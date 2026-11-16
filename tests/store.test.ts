@@ -115,11 +115,13 @@ describe('the actor comes from the session, never from input', () => {
     expect(record.snapshot.decision).not.toHaveProperty('officer')
     expect(record.snapshot.decision.consent?.recordedBy.userId).toBe('u-ta-1')
   })
-  it('the search records who ran it and stamps unstamped access answers', async () => {
-    const { d } = await searched(officer, 'access')
-    const s = d.searches[0]
-    expect(s.searchedBy?.userId).toBe('u-ta-1')
-    expect(s.household.accessAssessments?.[0]).toMatchObject({ answeredBy: { userId: 'u-ta-1' }, answeredAt: NOW })
+  it('the search records who ran it and stamps every access answer from the session, whatever stamp it arrived with', async () => {
+    const h = SCENARIOS.find(s => s.id === 'access')!.household(TODAY)
+    h.accessAssessments![0].answeredBy = { userId: 'u-hos-1', name: 'Martin Osei', role: 'head_of_service', roleLabel: 'Head of service' }
+    h.accessAssessments![0].answeredAt = '2020-01-01T00:00:00Z'
+    const { result } = await cmdSearch(await seed(NOW, TODAY), officer, h, { id: 'S-x', travel: estimateProvider })
+    expect(result.searchedBy?.userId).toBe('u-ta-1')
+    expect(result.household.accessAssessments?.[0]).toMatchObject({ answeredBy: { userId: 'u-ta-1' }, answeredAt: NOW })
   })
 })
 

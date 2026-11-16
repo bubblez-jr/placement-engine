@@ -23,7 +23,7 @@ Before any property is looked at, `validateHousehold()` (`src/engine/validate.ts
 
 Marking a person as a wheelchair user opens six yes/no questions for that person; the household's disability flag opens them for the household when nobody is marked as a wheelchair user. Nothing is pre-selected and an unanswered question is an error. The questions: wheelchair-accessible home, step-free access, ground floor or lift, adapted bathroom, an assistance dog, and equipment or a carer that could change the bedroom need.
 
-The property checks use the **union of every "yes"**, and each failed check names whose need it is ("Adult 1 needs step-free access: this property does not have it"). An assistance dog drives the pets check. Equipment or a carer adds a warning only: the bedroom count does not change without a tested rule. Each answer records which officer gave it and when. Household-level needs recorded under the earlier version are still applied, never dropped.
+The property checks use the **union of every "yes"**, and each failed check names whose need it is ("Adult 1 needs step-free access: this property does not have it"). An assistance dog drives the pets check. Equipment or a carer adds a warning only: the bedroom count does not change without a tested rule. The search records the answers against the officer who ran it (from the signed-in session, never from the form) and when. Household-level needs recorded under the earlier version are still applied, never dropped.
 
 ## 1. Hard gates
 
